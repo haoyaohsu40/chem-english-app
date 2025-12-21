@@ -43,21 +43,12 @@ def text_to_speech_autoplay(text):
 def generate_long_audio(df):
     """生成通勤用的長音訊 (加入報數與停頓優化)"""
     full_text = ""
-    # 使用 enumerate 來產生編號 (從 1 開始)
-    # df 已經是反轉過的 (最新的在最上面)，所以我們會從最新的單字開始唸 "第1個"
     for i, (index, row) in enumerate(df.iterrows(), start=1):
         word = str(row['Word'])
         chinese = str(row['Chinese'])
-        
-        # --- 節奏控制魔法區 ---
-        # 1. "第{i}個" -> 讓你心裡有準備區隔
-        # 2. "..." (逗點與句號) -> 強制 gTTS 停頓
-        # 3. 唸法順序：編號 -> (停) -> 英文 -> (停) -> 中文 -> (停) -> 英文 -> (長停頓)
         segment = f"第{i}個... ... {word}. ... ... {chinese}. ... ... {word}. ... ... ... "
-        
         full_text += segment
     
-    # 使用 zh-TW 引擎，因為它唸中文自然，唸英文也還行
     tts = gTTS(text=full_text, lang='zh-TW')
     fp = BytesIO()
     tts.write_to_fp(fp)
@@ -71,7 +62,7 @@ def is_contains_chinese(string):
     return False
 
 def main():
-    st.set_page_config(page_title="化工英語通 v7.0", layout="wide", page_icon="⚗️")
+    st.set_page_config(page_title="化工英語通 v8.0", layout="wide", page_icon="⚗️")
 
     # CSS 美化與【強制防翻譯】設定
     st.markdown("""
@@ -86,7 +77,7 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    st.title("⚗️ 化工英語單字卡 (v7.0 節奏優化版)")
+    st.title("⚗️ 化工英語單字卡 (v8.0 批次極速版)")
 
     # 載入資料
     df = load_data()
@@ -95,81 +86,144 @@ def main():
     with st.sidebar:
         st.header("📝 新增單字")
         
-        # 1. 筆記本選擇
+        # 1. 筆記本選擇 (共用)
         notebooks = df['Notebook'].unique().tolist()
         if '預設筆記本' not in notebooks:
             notebooks.append('預設筆記本')
         
-        nb_mode = st.radio("選擇模式", ["選擇現有", "建立新本"], horizontal=True)
-        if nb_mode == "選擇現有":
+        # 筆記本選擇區塊
+        nb_mode_opt = st.radio("筆記本來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed")
+        if nb_mode_opt == "選擇現有":
             notebook = st.selectbox("選擇筆記本", notebooks)
         else:
             notebook = st.text_input("輸入新筆記本名稱", "ABS製程")
 
         st.markdown("---")
         
-        # 2. 單字輸入
-        word_input = st.text_input("輸入英文單字", placeholder="例如: Valve (請勿輸入中文)")
+        # 2. 切換輸入模式 (單字 vs 批次)
+        input_mode = st.radio("輸入模式", ["🔤 單字輸入 (單筆)", "🚀 批次貼上 (多筆)"], horizontal=True)
 
-        # 3. 試聽按鈕
-        if st.button("🔊 試聽發音 (免存檔)"):
-            if word_input:
-                clean_word = word_input.split('[')[0].split('/')[0].strip()
-                if is_contains_chinese(clean_word):
-                     st.warning("⚠️ 請輸入英文進行試聽")
-                else:
-                    st.markdown(text_to_speech_autoplay(clean_word), unsafe_allow_html=True)
-            else:
-                st.warning("請先輸入單字")
+        if input_mode == "🔤 單字輸入 (單筆)":
+            # --- 舊的單筆輸入模式 ---
+            word_input = st.text_input("輸入英文單字", placeholder="例如: Valve (請勿輸入中文)")
 
-        # 4. 新增按鈕
-        if st.button("➕ 加入單字庫", type="primary"):
-            if word_input and notebook:
-                if is_contains_chinese(word_input) and '[' not in word_input:
-                     st.error("❌ 錯誤：請輸入英文 (如 Valve)，不要輸入中文！")
+            if st.button("🔊 試聽發音 (免存檔)"):
+                if word_input:
+                    clean_word = word_input.split('[')[0].split('/')[0].strip()
+                    if is_contains_chinese(clean_word):
+                        st.warning("⚠️ 請輸入英文進行試聽")
+                    else:
+                        st.markdown(text_to_speech_autoplay(clean_word), unsafe_allow_html=True)
                 else:
-                    with st.spinner('AI 正在查詢翻譯與音標...'):
-                        if '[' in word_input or '/' in word_input:
-                            ipa_match = re.search(r'[\[\/](.*?)[\]\/]', word_input)
-                            ipa = f"[{ipa_match.group(1)}]" if ipa_match else ""
-                            word_clean = re.sub(r'[\[\/].*?[\]\/]', '', word_input).strip()
-                        else:
-                            word_clean = word_input.strip()
+                    st.warning("請先輸入單字")
+
+            if st.button("➕ 加入單字庫", type="primary"):
+                if word_input and notebook:
+                    if is_contains_chinese(word_input) and '[' not in word_input:
+                        st.error("❌ 錯誤：請輸入英文 (如 Valve)，不要輸入中文！")
+                    else:
+                        with st.spinner('AI 正在查詢翻譯與音標...'):
+                            if '[' in word_input or '/' in word_input:
+                                ipa_match = re.search(r'[\[\/](.*?)[\]\/]', word_input)
+                                ipa = f"[{ipa_match.group(1)}]" if ipa_match else ""
+                                word_clean = re.sub(r'[\[\/].*?[\]\/]', '', word_input).strip()
+                            else:
+                                word_clean = word_input.strip()
+                                try:
+                                    ipa = f"[{eng_to_ipa.convert(word_clean)}]"
+                                except:
+                                    ipa = ""
+                            
+                            if is_contains_chinese(word_clean):
+                                st.error("❌ 錯誤：輸入框偵測到中文！請只輸入英文。")
+                            else:
+                                try:
+                                    translator = GoogleTranslator(source='auto', target='zh-TW')
+                                    chinese_trans = translator.translate(word_clean)
+                                except:
+                                    chinese_trans = "請手動輸入中文"
+
+                                new_entry = {
+                                    'Notebook': notebook,
+                                    'Word': word_clean,
+                                    'IPA': ipa,
+                                    'Chinese': chinese_trans,
+                                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                                }
+                                df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+                                save_data(df)
+                                st.success(f"已加入：{word_clean}")
+                                time.sleep(0.5)
+                                st.rerun()
+
+        else:
+            # --- 新的批次輸入模式 ---
+            st.info("請將 NotebookLM 整理好的單字貼在下方，用逗號隔開。")
+            st.caption("例如：apple, valve, pump, viscosity")
+            bulk_input = st.text_area("📋 貼上區", height=150)
+            
+            if st.button("🚀 開始批次加入", type="primary"):
+                if bulk_input and notebook:
+                    # 使用 regex 同時處理：英文逗號、中文逗號、換行符號
+                    words = re.split(r'[,\n，]', bulk_input)
+                    
+                    added_count = 0
+                    progress_bar = st.progress(0)
+                    total_words = len([w for w in words if w.strip()])
+                    
+                    if total_words == 0:
+                        st.warning("沒有偵測到有效單字")
+                    else:
+                        new_entries = []
+                        processed = 0
+                        
+                        for w in words:
+                            word_clean = w.strip()
+                            if not word_clean: continue
+                            
+                            processed += 1
+                            progress_bar.progress(processed / total_words)
+                            
+                            # 簡單過濾：如果有中文或是數字開頭(例如 1. apple)就跳過或處理
+                            # 這裡我們只過濾純中文
+                            if is_contains_chinese(word_clean):
+                                continue 
+                                
+                            # 開始處理單字
                             try:
                                 ipa = f"[{eng_to_ipa.convert(word_clean)}]"
-                            except:
-                                ipa = ""
-                        
-                        if is_contains_chinese(word_clean):
-                            st.error("❌ 錯誤：輸入框偵測到中文！請只輸入英文。")
-                        else:
-                            try:
                                 translator = GoogleTranslator(source='auto', target='zh-TW')
                                 chinese_trans = translator.translate(word_clean)
-                            except:
-                                chinese_trans = "請手動輸入中文"
+                                
+                                new_entry = {
+                                    'Notebook': notebook,
+                                    'Word': word_clean,
+                                    'IPA': ipa,
+                                    'Chinese': chinese_trans,
+                                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                                }
+                                new_entries.append(new_entry)
+                                added_count += 1
+                            except Exception as e:
+                                st.error(f"處理 {word_clean} 時發生錯誤: {e}")
 
-                            new_entry = {
-                                'Notebook': notebook,
-                                'Word': word_clean,
-                                'IPA': ipa,
-                                'Chinese': chinese_trans,
-                                'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
-                            }
-                            df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
+                        if new_entries:
+                            df = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
                             save_data(df)
-                            st.success(f"已加入：{word_clean}")
-                            time.sleep(0.5)
+                            progress_bar.empty()
+                            st.success(f"🎉 成功加入 {added_count} 個單字！")
+                            time.sleep(1.5)
                             st.rerun()
+                        else:
+                            st.warning("沒有成功加入任何單字，請檢查格式。")
+
 
     # --- 側邊欄：通勤模式 ---
     st.sidebar.markdown("---")
-    with st.sidebar.expander("🎧 通勤模式 (MP3下載)", expanded=True):
+    with st.sidebar.expander("🎧 通勤模式 (MP3下載)"):
         st.write("打包下載目前的列表。")
         st.caption("順序：第N個 ➝ 英文 ➝ 中文 ➝ 英文")
         
-        # 這裡的按鈕我們移到下面主畫面控制，這裡只是提示
-
     # --- 側邊欄：進階管理 ---
     with st.sidebar.expander("🛠️ 進階管理"):
         manage_list = df['Notebook'].unique().tolist()
@@ -212,9 +266,6 @@ def main():
         if not filtered_df.empty:
             if st.button("下載此列表 MP3"):
                 with st.spinner(f"正在生成優化音訊 (加入停頓與報數)..."):
-                    # 這裡我們傳入 "反轉後" 的列表 (iloc[::-1])
-                    # 這樣音訊的順序就會跟網頁上看到的列表順序 (最新的在最上面) 一樣
-                    # 也就是：最新的單字會念「第1個」
                     audio_bytes = generate_long_audio(filtered_df.iloc[::-1])
                     st.download_button(
                         label="📥 點擊下載優化版 MP3",
