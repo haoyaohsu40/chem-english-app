@@ -1,484 +1,302 @@
-import streamlit as st
-import pandas as pd
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import json
-from gtts import gTTS
-import base64
-from io import BytesIO
-from deep_translator import GoogleTranslator
-import eng_to_ipa
-import time
-import re
-import uuid
-import urllib.parse
-import random
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>單字學習本 - 完整功能版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        /* 卡片翻轉特效 */
+        .perspective { perspective: 1000px; }
+        .rotate-y-180 { transform: rotateY(180deg); }
+        .transform-style-preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans" x-data="vocabApp()">
 
-# --- 設定頁面 ---
-st.set_page_config(page_title="AI 智能單字速記通 (家庭版)", layout="wide", page_icon="🚀")
-
-# --- CSS 美化 (V24.1: 修復語法錯誤 + 介面優化) ---
-st.markdown("""
-<style>
-/* 全局字體優化 */
-.main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-
-/* 按鈕樣式 */
-.stButton>button { 
-    border-radius: 12px; 
-    height: 3em; 
-    font-weight: bold; 
-    border: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    transition: all 0.2s;
-}
-.stButton>button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
-
-/* 頂部數據卡片樣式 */
-.metric-card {
-    background-color: #f0fdf4; /* 淺綠色背景 */
-    border: 2px solid #a5d6a7;
-    border-radius: 15px;
-    padding: 10px;
-    text-align: center;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
-.metric-label { font-size: 14px; color: #555; margin-bottom: 5px; }
-.metric-value { font-size: 32px; font-weight: bold; color: #2E7D32; }
-
-/* 單字卡樣式 */
-.word-text { font-size: 26px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
-.ipa-text { font-size: 16px; color: #757575; }
-.meaning-text { font-size: 22px; color: #1565C0; font-weight: bold;}
-
-/* 測驗區塊 */
-.quiz-card {
-    background-color: #fff8e1;
-    padding: 40px;
-    border-radius: 20px;
-    text-align: center;
-    border: 3px dashed #ffb74d;
-    margin-bottom: 20px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# --- 核心：連接 Google Sheets ---
-def get_google_sheet_data():
-    try:
-        creds_json = json.loads(st.secrets["service_account"]["info"])
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("vocab_db").sheet1
-        data = sheet.get_all_records()
-        if not data:
-            df = pd.DataFrame(columns=['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
-            sheet.append_row(['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
-            return df
-        return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"連線 Google Sheets 失敗：{e}")
-        return pd.DataFrame(columns=['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
-
-def save_to_google_sheet(df):
-    try:
-        creds_json = json.loads(st.secrets["service_account"]["info"])
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
-        client = gspread.authorize(creds)
-        sheet = client.open("vocab_db").sheet1
-        sheet.clear()
-        update_data = [df.columns.values.tolist()] + df.values.tolist()
-        sheet.update(update_data)
-    except Exception as e:
-        st.error(f"儲存失敗：{e}")
-
-# --- 輔助函數 ---
-def text_to_speech_visible(text, lang='en', tld='com', slow=False):
-    try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
-        if not clean_text: return ""
-        tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
-        fp = BytesIO()
-        tts.write_to_fp(fp)
-        b64 = base64.b64encode(fp.getvalue()).decode()
-        return f"""<audio controls autoplay style="width: 100%; margin-top: 10px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-    except: return ""
-
-def text_to_speech_autoplay_hidden(text, lang='en', tld='com', slow=False):
-    try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
-        if not clean_text: return ""
-        tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
-        fp = BytesIO()
-        tts.write_to_fp(fp)
-        b64 = base64.b64encode(fp.getvalue()).decode()
-        unique_id = f"audio_{uuid.uuid4()}_{time.time_ns()}"
-        return f"""<audio autoplay style="width:0;height:0;opacity:0;" id="{unique_id}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-    except: return ""
-
-def generate_custom_audio(df, sequence, tld='com', slow=False):
-    full_text = ""
-    for i, (index, row) in enumerate(df.iloc[::-1].iterrows(), start=1):
-        word = str(row['Word']); chinese = str(row['Chinese'])
-        full_text += f"第{i}個... "
-        if not sequence: full_text += f"{word}... "
-        else:
-            for item in sequence:
-                if item == "英文": full_text += f"{word}... "
-                elif item == "中文": full_text += f"{chinese}... "
-        full_text += "... ... "
-    tts = gTTS(text=full_text, lang='zh-TW', slow=slow)
-    fp = BytesIO()
-    tts.write_to_fp(fp)
-    return fp.getvalue()
-
-def is_contains_chinese(string):
-    for char in str(string):
-        if '\u4e00' <= char <= '\u9fff': return True
-    return False
-
-def to_excel(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Sheet1')
-    return output.getvalue()
-
-# --- 測驗函數 ---
-def initialize_quiz_state():
-    if 'quiz_score' not in st.session_state: st.session_state.quiz_score = 0
-    if 'quiz_total' not in st.session_state: st.session_state.quiz_total = 0
-    if 'quiz_current' not in st.session_state: st.session_state.quiz_current = None
-    if 'quiz_options' not in st.session_state: st.session_state.quiz_options = []
-    if 'quiz_answered' not in st.session_state: st.session_state.quiz_answered = False
-    if 'quiz_is_correct' not in st.session_state: st.session_state.quiz_is_correct = False
-
-def next_question(df):
-    if df.empty: return
-    target_row = df.sample(1).iloc[0]
-    st.session_state.quiz_current = target_row
-    correct_opt = str(target_row['Chinese'])
-    other_rows = df[df['Chinese'] != correct_opt]
-    distractors = []
-    if len(other_rows) >= 3: distractors = other_rows.sample(3)['Chinese'].astype(str).tolist()
-    else:
-        placeholders = ["蘋果", "閥門", "幫浦", "螺絲", "溫度", "壓力", "反應器"]
-        candidates = [p for p in placeholders if p != correct_opt]
-        needed = 3 - len(other_rows)
-        distractors = other_rows['Chinese'].astype(str).tolist() + random.sample(candidates, min(len(candidates), needed))
-        while len(distractors) < 3: distractors.append("未知單字")
-    options = [correct_opt] + distractors
-    random.shuffle(options)
-    st.session_state.quiz_options = options
-    st.session_state.quiz_answered = False
-    st.session_state.quiz_is_correct = False
-
-def check_answer(user_choice):
-    st.session_state.quiz_answered = True
-    st.session_state.quiz_total += 1
-    if user_choice == str(st.session_state.quiz_current['Chinese']):
-        st.session_state.quiz_score += 1
-        st.session_state.quiz_is_correct = True
-    else: st.session_state.quiz_is_correct = False
-
-# --- 主程式 ---
-def main():
-    if 'df' not in st.session_state:
-        with st.spinner('正在連線雲端資料庫...'):
-            st.session_state.df = get_google_sheet_data()
-    
-    df = st.session_state.df
-    initialize_quiz_state()
-    if 'play_order' not in st.session_state: st.session_state.play_order = ["英文", "中文", "英文"] 
-
-    # --- 1. 頂部佈局：標題 (左) + 數據卡片 (右) ---
-    col_header, col_metrics_area = st.columns([2, 2])
-    
-    with col_header:
-        st.title("🚀 AI 智能單字速記通")
-        st.caption("家庭雲端版 v24.1")
-
-    # --- 2. 篩選邏輯 ---
-    # 先在 session_state 抓取選單的值，如果沒有則預設為"全部"
-    current_notebook = st.session_state.get('filter_nb_key', '全部')
-    
-    # 計算數字
-    total_count = len(df)
-    filtered_df = df if current_notebook == "全部" else df[df['Notebook'] == current_notebook]
-    current_count = len(filtered_df)
-
-    # 在右上角渲染數據卡片
-    with col_metrics_area:
-        m1, m2 = st.columns(2)
-        with m1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">☁️ 雲端總字數</div>
-                <div class="metric-value">{total_count}</div>
+    <div class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-10">
+        <div class="max-w-2xl mx-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h1 class="text-2xl font-bold" x-text="currentNotebookName"></h1>
+                <div class="flex gap-2">
+                    <button @click="renameNotebook()" class="text-xs bg-blue-500 hover:bg-blue-400 px-2 py-1 rounded">更名筆記本</button>
+                    <select x-model="currentNotebookId" class="text-black text-sm rounded px-2 py-1">
+                        <option value="1">工作專用 (ABS)</option>
+                        <option value="2">多益單字</option>
+                    </select>
+                </div>
             </div>
-            """, unsafe_allow_html=True)
-        with m2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">📖 目前本子字數</div>
-                <div class="metric-value">{current_count}</div>
-            </div>
-            """, unsafe_allow_html=True)
 
-    st.markdown("---")
-
-    # --- 3. 側邊欄 ---
-    with st.sidebar:
-        st.header("📝 新增單字")
-        notebooks = df['Notebook'].unique().tolist()
-        if '預設筆記本' not in notebooks: notebooks.append('預設筆記本')
-        
-        nb_mode_opt = st.radio("筆記本來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed")
-        if nb_mode_opt == "選擇現有": notebook = st.selectbox("選擇筆記本", notebooks)
-        else: notebook = st.text_input("輸入新筆記本名稱", "我的單字本")
-
-        st.markdown("---")
-        input_mode = st.radio("輸入模式", ["🔤 單字輸入", "🚀 批次貼上"], horizontal=True)
-
-        if input_mode == "🔤 單字輸入":
-            word_input = st.text_input("輸入英文單字", placeholder="例如: Valve")
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("👀 翻譯", use_container_width=True):
-                    if word_input and not is_contains_chinese(word_input):
-                        try:
-                            with st.spinner("..."):
-                                trans = GoogleTranslator(source='auto', target='zh-TW').translate(word_input)
-                                st.info(f"{trans}")
-                        except: st.error("失敗")
-            with c2:
-                if st.button("🔊 試聽", use_container_width=True):
-                    if word_input: st.markdown(text_to_speech_visible(word_input, 'en'), unsafe_allow_html=True)
-
-            if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
-                if word_input and notebook and not is_contains_chinese(word_input):
-                    with st.spinner('同步中...'):
-                        try:
-                            ipa = f"[{eng_to_ipa.convert(word_input)}]"
-                            trans = GoogleTranslator(source='auto', target='zh-TW').translate(word_input)
-                            new_entry = {'Notebook': notebook, 'Word': word_input, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
-                            df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
-                            st.session_state.df = df
-                            save_to_google_sheet(df)
-                            st.success(f"已儲存：{word_input}")
-                            time.sleep(0.5)
-                            st.rerun()
-                        except Exception as e: st.error(f"錯誤: {e}")
-        else:
-            bulk_input = st.text_area("📋 批次貼上", height=100)
-            if st.button("🚀 批次加入", type="primary"):
-                if bulk_input and notebook:
-                    words = re.split(r'[,\n，]', bulk_input)
-                    new_entries = []
-                    bar = st.progress(0)
-                    for i, w in enumerate(words):
-                        w = w.strip()
-                        if w and not is_contains_chinese(w):
-                            try:
-                                ipa = f"[{eng_to_ipa.convert(w)}]"
-                                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                                new_entries.append({'Notebook': notebook, 'Word': w, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')})
-                            except: pass
-                        bar.progress((i+1)/len(words))
-                    
-                    if new_entries:
-                        with st.spinner("寫入中..."):
-                            df = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-                            st.session_state.df = df
-                            save_to_google_sheet(df)
-                            st.success(f"加入 {len(new_entries)} 筆")
-                            time.sleep(1)
-                            st.rerun()
-
-        st.markdown("---")
-        with st.expander("🛠️ 進階管理"):
-            if st.button("🔄 強制雲端更新"):
-                st.session_state.df = get_google_sheet_data()
-                st.success("已更新！"); st.rerun()
-            manage_list = df['Notebook'].unique().tolist()
-            if manage_list:
-                target_nb = st.selectbox("刪除筆記本", manage_list)
-                if st.button("🗑️ 刪除此本"):
-                    if st.session_state.get('confirm_del') != True:
-                        st.warning("確認刪除？")
-                        st.session_state.confirm_del = True
-                    else:
-                        df = df[df['Notebook'] != target_nb]
-                        st.session_state.df = df
-                        save_to_google_sheet(df)
-                        st.session_state.confirm_del = False
-                        st.rerun()
-
-    # --- 4. 主畫面工具區 ---
-    st.subheader("📚 複習與工具區")
-    
-    # 筆記本選擇
-    nb_options = ["全部"] + df['Notebook'].unique().tolist()
-    sel_nb = st.selectbox("請選擇要複習的筆記本：", nb_options, key='filter_nb_key')
-
-    # 工具按鈕區 (並排顯示)
-    col_tool_1, col_tool_2 = st.columns(2)
-    
-    with col_tool_1:
-        # 下載 Excel (只下載目前篩選的資料)
-        if not filtered_df.empty:
-            file_name_xls = f"Vocab_{current_notebook if current_notebook != '全部' else 'All'}.xlsx"
-            st.download_button(
-                label="📥 下載 Excel (目前清單)",
-                data=to_excel(filtered_df),
-                file_name=file_name_xls,
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                use_container_width=True
-            )
-        else:
-            st.button("無資料可下載", disabled=True, use_container_width=True)
-
-    with col_tool_2:
-        # 下載 MP3
-        if not filtered_df.empty and st.session_state.play_order:
-            if st.button("🎧 製作並下載 MP3", use_container_width=True):
-                with st.spinner("正在合成語音 (請稍候)..."):
-                    tld = st.session_state.get('accent_tld', 'com')
-                    slow = st.session_state.get('is_slow', False)
-                    audio_bytes = generate_custom_audio(filtered_df, st.session_state.play_order, tld=tld, slow=slow)
-                    st.download_button(
-                        label="⬇️ 點擊下載 MP3 檔案", 
-                        data=audio_bytes, 
-                        file_name=f"Audio_{current_notebook}.mp3", 
-                        mime="audio/mp3", 
-                        use_container_width=True
-                    )
-        else:
-            if not st.session_state.play_order:
-                st.warning("⚠️ 請先在左側設定「播放順序」")
-            else:
-                st.button("無資料可下載", disabled=True, use_container_width=True)
-
-    # --- 5. 功能頁籤區 ---
-    st.markdown("###")
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 單字列表", "🃏 翻卡學習", "🎬 自動播放", "🏆 測驗挑戰"])
-
-    with tab1:
-        st.markdown(f"**目前顯示：{current_notebook} ({len(filtered_df)} 字)**")
-        # 標題列 - 已修復這裡的引號錯誤
-        h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
-        h1.markdown("**🇬🇧 單字 / 音標**")
-        h2.markdown("**🇹🇼 中文**")
-        h3.markdown("**功能**")
-        h4.markdown("**刪除**")
-        st.divider()
-
-        if not filtered_df.empty:
-            for index, row in filtered_df.iloc[::-1].iterrows():
-                c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-                with c1:
-                    st.markdown(f"<div class='word-text'>{row['Word']}</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
-                with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
-                with c3:
-                    if st.button("🔊", key=f"l_p_{index}"):
-                        st.markdown(text_to_speech_visible(row['Word'], 'en'), unsafe_allow_html=True)
-                with c4:
-                    if st.button("🗑️", key=f"l_d_{index}"):
-                        df = df[~((df['Word'] == row['Word']) & (df['Notebook'] == row['Notebook']))]
-                        st.session_state.df = df
-                        save_to_google_sheet(df)
-                        st.rerun()
-                st.markdown("---")
-        else: st.info("這裡還沒有單字喔！")
-
-    with tab2:
-        if not filtered_df.empty:
-            if 'card_index' not in st.session_state: st.session_state.card_index = 0
-            curr_idx = st.session_state.card_index % len(filtered_df)
-            row = filtered_df.iloc[curr_idx]
-            
-            c_prev, c_card, c_next = st.columns([1, 4, 1])
-            with c_prev: 
-                st.markdown("<br><br><br>", unsafe_allow_html=True)
-                if st.button("◀", use_container_width=True): st.session_state.card_index -= 1; st.rerun()
-            with c_next: 
-                st.markdown("<br><br><br>", unsafe_allow_html=True)
-                if st.button("▶", use_container_width=True): st.session_state.card_index += 1; st.rerun()
-            
-            with c_card:
-                st.markdown(f"""
-                    <div style="border: 2px solid #81C784; border-radius: 20px; padding: 40px; text-align: center; background-color: #ffffff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                        <div style="font-size: 60px; color: #2E7D32; font-weight: bold;">{row['Word']}</div>
-                        <div style="color: #666; font-size: 24px; margin-top: 10px;">{row['IPA']}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+            <div class="flex flex-col gap-3">
+                <input x-model="searchQuery" type="text" placeholder="🔍 搜尋單字..." class="w-full px-3 py-2 rounded text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300">
                 
-                b1, b2 = st.columns(2)
-                with b1:
-                    if st.button("👀 顯示中文", use_container_width=True):
-                        st.info(f"💡 {row['Chinese']}")
-                with b2:
-                    if st.button("🔊 播放發音", use_container_width=True):
-                        st.markdown(text_to_speech_visible(row['Word'], 'en'), unsafe_allow_html=True)
+                <div class="flex justify-between items-center text-sm">
+                    <div class="flex gap-2 bg-blue-700 p-1 rounded">
+                        <button @click="viewMode = 'list'" :class="{'bg-white text-blue-800 shadow': viewMode === 'list'}" class="px-3 py-1 rounded transition">列表</button>
+                        <button @click="startFlashcard()" :class="{'bg-white text-blue-800 shadow': viewMode === 'card'}" class="px-3 py-1 rounded transition">卡片學習</button>
+                    </div>
+                    
+                    <label class="flex items-center gap-2 cursor-pointer select-none" x-show="viewMode === 'list'">
+                        <input type="checkbox" x-model="hideChinese" class="form-checkbox h-4 w-4 text-blue-600">
+                        <span>遮蔽中文</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    with tab3:
-        st.info("自動輪播您目前的單字列表")
-        col_ctrl, _ = st.columns([1, 2])
-        with col_ctrl:
-            delay_sec = st.slider("每張卡片停留秒數", 2, 10, 3)
-            start_btn = st.button("▶️ 開始播放", type="primary", use_container_width=True)
-        
-        slide_placeholder = st.empty()
-        
-        if start_btn:
-            if filtered_df.empty: st.error("無單字！")
-            elif not st.session_state.play_order: st.error("請先在左側設定播放順序！")
-            else:
-                play_list = filtered_df.iloc[::-1]
-                for index, row in play_list.iterrows():
-                    word = str(row['Word']); chinese = str(row['Chinese']); ipa = str(row['IPA'])
-                    for step in st.session_state.play_order:
-                        slide_placeholder.empty(); time.sleep(0.1)
-                        if step == "英文":
-                            slide_placeholder.markdown(f"""<div style="border:2px solid #4CAF50;border-radius:20px;padding:40px;text-align:center;background-color:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{word}</div><div style="font-size:28px;color:#666;">{ipa}</div><div style="height:50px;color:#aaa;">(Listen...)</div>{text_to_speech_autoplay_hidden(word, 'en')}</div>""", unsafe_allow_html=True)
-                        elif step == "中文":
-                            slide_placeholder.markdown(f"""<div style="border:2px solid #4CAF50;border-radius:20px;padding:40px;text-align:center;background-color:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{word}</div><div style="font-size:28px;color:#666;">{ipa}</div><div style="font-size:50px;color:#1565C0;font-weight:bold;margin-top:20px;">{chinese}</div>{text_to_speech_autoplay_hidden(chinese, 'zh-TW')}</div>""", unsafe_allow_html=True)
-                        time.sleep(delay_sec)
-                slide_placeholder.success("播放結束！")
+    <div class="max-w-2xl mx-auto p-4 pb-24">
 
-    with tab4:
-        if 'quiz_total' in st.session_state and st.session_state.quiz_total > 0:
-            acc = (st.session_state.quiz_score / st.session_state.quiz_total) * 100
-        else: acc = 0
-        c_score, c_reset = st.columns([3, 1])
-        with c_score: st.markdown(f"📊 答對 **{st.session_state.quiz_score}** / 總題數 **{st.session_state.quiz_total}** (正確率: {acc:.1f}%)")
-        with c_reset:
-            if st.button("🔄 重置"):
-                st.session_state.quiz_score = 0; st.session_state.quiz_total = 0; st.rerun()
-        
-        if filtered_df.empty: st.info("請先新增單字！")
-        else:
-            if st.session_state.quiz_current is None: next_question(filtered_df)
-            current_q = st.session_state.quiz_current
+        <div x-show="viewMode === 'list'">
+            <template x-for="word in filteredWords" :key="word.id">
+                <div class="bg-white rounded-lg shadow p-4 mb-3 flex justify-between items-center transition hover:shadow-md" :class="{'opacity-50': word.mastered}">
+                    
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xl font-bold text-blue-900" x-text="word.text"></span>
+                            <button @click="speak(word.text)" class="text-gray-400 hover:text-blue-500">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                            </button>
+                        </div>
+                        <div class="text-gray-600" :class="{'blur-sm select-none': hideChinese, 'cursor-pointer': hideChinese}" @click="hideChinese = false" x-text="word.def"></div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <button @click="toggleMastered(word.id)" class="text-gray-300 hover:text-green-500" :class="{'text-green-500': word.mastered}" title="標記為已熟記">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </button>
+                        <button @click="editWord(word)" class="text-gray-300 hover:text-blue-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+                        </button>
+                        <button @click="deleteWord(word.id)" class="text-gray-300 hover:text-red-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.993.883L8 2.976 7.976 3H5a1 1 0 000 2h14a1 1 0 000-2h-2.976L16 2.976a1 1 0 00-.993-.883H9zM5.929 5h8.142l-.707 10.607a2 2 0 01-1.996 1.893H8.632a2 2 0 01-1.996-1.893L5.929 5z" clip-rule="evenodd" /></svg>
+                        </button>
+                    </div>
+                </div>
+            </template>
             
-            st.markdown(f"""<div class="quiz-card"><div style="font-size:20px;color:#666;">請聽發音並選出正確中文：</div><div class="quiz-word">{current_q['Word']}</div><div style="color:#888;">{current_q['IPA']}</div></div>""", unsafe_allow_html=True)
-            st.markdown(text_to_speech_visible(current_q['Word'], 'en'), unsafe_allow_html=True)
+            <div x-show="filteredWords.length === 0" class="text-center text-gray-500 mt-10">
+                沒有找到單字，快按右下角新增吧！
+            </div>
+        </div>
 
-            if not st.session_state.quiz_answered:
-                cols = st.columns(2)
-                for idx, option in enumerate(st.session_state.quiz_options):
-                    if cols[idx % 2].button(option, key=f"opt_{idx}", use_container_width=True):
-                        check_answer(option); st.rerun()
-            else:
-                if st.session_state.quiz_is_correct: st.success("🎉 答對了！"); st.balloons()
-                else: st.error(f"❌ 答錯了... 正確答案是：{current_q['Chinese']}")
-                if st.button("➡️ 下一題", type="primary", use_container_width=True):
-                    next_question(filtered_df); st.rerun()
+        <div x-show="viewMode === 'card'" class="h-[60vh] flex flex-col items-center justify-center">
+            
+            <template x-if="flashcardQueue.length > 0">
+                <div class="w-full h-full relative perspective group cursor-pointer" @click="isFlipped = !isFlipped">
+                    <div class="w-full h-full relative transform-style-preserve-3d transition-transform duration-500 shadow-xl rounded-xl" :class="{'rotate-y-180': isFlipped}">
+                        
+                        <div class="absolute inset-0 backface-hidden bg-white rounded-xl flex flex-col items-center justify-center p-8 border-2 border-blue-100">
+                            <span class="text-sm text-gray-400 mb-4">點擊翻牌</span>
+                            <h2 class="text-4xl font-bold text-blue-800 text-center" x-text="currentCard.text"></h2>
+                            <button @click.stop="speak(currentCard.text)" class="mt-6 p-2 rounded-full bg-blue-50 text-blue-500 hover:bg-blue-100">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
+                            </button>
+                        </div>
 
-if __name__ == "__main__":
-    main()
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-blue-50 rounded-xl flex flex-col items-center justify-center p-8 border-2 border-blue-200">
+                            <span class="text-sm text-gray-400 mb-4">中文解釋</span>
+                            <p class="text-2xl font-medium text-gray-800 text-center" x-text="currentCard.def"></p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <div class="flex items-center gap-6 mt-8" x-show="flashcardQueue.length > 0">
+                <button @click="prevCard()" class="px-4 py-2 bg-gray-200 rounded-full hover:bg-gray-300">上一張</button>
+                <button @click="shuffleCards()" class="px-4 py-2 bg-yellow-100 text-yellow-700 rounded-full hover:bg-yellow-200 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    洗牌
+                </button>
+                <button @click="nextCard()" class="px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 shadow-lg">下一張</button>
+            </div>
+
+            <div x-show="flashcardQueue.length === 0" class="text-center text-gray-500">
+                目前沒有卡片可以複習。<br>請切換回列表新增單字。
+            </div>
+        </div>
+
+    </div>
+
+    <button @click="openAddModal()" class="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition transform hover:scale-110 z-20">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+    </button>
+
+    <div x-show="isModalOpen" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style="display: none;">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+            <h3 class="text-xl font-bold mb-4" x-text="isEditing ? '編輯單字' : '新增單字'"></h3>
+            
+            <div class="mb-3">
+                <label class="block text-sm font-medium text-gray-700 mb-1">英文單字</label>
+                <input x-model="modalForm.text" type="text" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            </div>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">中文解釋</label>
+                <textarea x-model="modalForm.def" rows="3" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+            </div>
+
+            <div class="mb-4" x-show="isEditing">
+                 <label class="block text-sm font-medium text-gray-700 mb-1">移動到筆記本</label>
+                 <select x-model="modalForm.notebookId" class="w-full border rounded px-3 py-2">
+                    <option value="1">工作專用 (ABS)</option>
+                    <option value="2">多益單字</option>
+                 </select>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <button @click="isModalOpen = false" class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded">取消</button>
+                <button @click="saveWord()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function vocabApp() {
+            return {
+                // 資料狀態
+                words: [
+                    { id: 1, notebookId: '1', text: 'Resin', def: '樹脂 (n.)', mastered: false },
+                    { id: 2, notebookId: '1', text: 'Injection Molding', def: '射出成型 (n.)', mastered: false },
+                    { id: 3, notebookId: '1', text: 'Viscosity', def: '黏度 (n.)', mastered: false },
+                    { id: 4, notebookId: '2', text: 'Agenda', def: '議程 (n.)', mastered: false },
+                    { id: 5, notebookId: '2', text: 'Proposal', def: '提案 (n.)', mastered: false }
+                ],
+                currentNotebookId: '1',
+                currentNotebookName: '工作專用 (ABS)',
+                searchQuery: '',
+                viewMode: 'list', // 'list' or 'card'
+                hideChinese: false,
+                
+                // Modal 狀態
+                isModalOpen: false,
+                isEditing: false,
+                modalForm: { id: null, text: '', def: '', notebookId: '1' },
+
+                // 卡片模式狀態
+                flashcardQueue: [],
+                currentCardIndex: 0,
+                isFlipped: false,
+
+                // 初始化
+                init() {
+                    this.$watch('currentNotebookId', (val) => {
+                        this.currentNotebookName = val === '1' ? '工作專用 (ABS)' : '多益單字';
+                        this.viewMode = 'list'; // 切換筆記本時回到列表
+                    });
+                },
+
+                // 取得目前顯示的單字 (含搜尋與筆記本過濾)
+                get filteredWords() {
+                    return this.words.filter(w => {
+                        const matchNotebook = w.notebookId === this.currentNotebookId;
+                        const matchSearch = w.text.toLowerCase().includes(this.searchQuery.toLowerCase()) || 
+                                          w.def.includes(this.searchQuery);
+                        return matchNotebook && matchSearch;
+                    });
+                },
+
+                // 取得當前卡片
+                get currentCard() {
+                    return this.flashcardQueue[this.currentCardIndex] || { text: '', def: '' };
+                },
+
+                // 功能：發音 (Text-to-Speech)
+                speak(text) {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = 'en-US';
+                    speechSynthesis.speak(utterance);
+                },
+
+                // 功能：切換熟記狀態
+                toggleMastered(id) {
+                    const word = this.words.find(w => w.id === id);
+                    if (word) word.mastered = !word.mastered;
+                },
+
+                // 功能：刪除單字
+                deleteWord(id) {
+                    if(confirm('確定要刪除這個單字嗎？')) {
+                        this.words = this.words.filter(w => w.id !== id);
+                    }
+                },
+
+                // 功能：開啟新增/編輯視窗
+                openAddModal() {
+                    this.isEditing = false;
+                    this.modalForm = { id: Date.now(), text: '', def: '', notebookId: this.currentNotebookId };
+                    this.isModalOpen = true;
+                },
+                editWord(word) {
+                    this.isEditing = true;
+                    // 複製物件避免直接修改
+                    this.modalForm = JSON.parse(JSON.stringify(word));
+                    this.isModalOpen = true;
+                },
+                saveWord() {
+                    if (!this.modalForm.text || !this.modalForm.def) return;
+
+                    if (this.isEditing) {
+                        // 更新舊單字
+                        const index = this.words.findIndex(w => w.id === this.modalForm.id);
+                        if (index !== -1) this.words[index] = { ...this.modalForm };
+                    } else {
+                        // 新增新單字
+                        this.words.push({ ...this.modalForm, mastered: false });
+                    }
+                    this.isModalOpen = false;
+                    
+                    // 如果在卡片模式下編輯，刷新隊列
+                    if(this.viewMode === 'card') this.startFlashcard();
+                },
+
+                // 功能：更名筆記本
+                renameNotebook() {
+                    const newName = prompt('請輸入新的筆記本名稱：', this.currentNotebookName);
+                    if (newName) this.currentNotebookName = newName;
+                },
+
+                // 卡片模式邏輯
+                startFlashcard() {
+                    this.viewMode = 'card';
+                    // 載入當前過濾後的單字進入卡片隊列
+                    this.flashcardQueue = JSON.parse(JSON.stringify(this.filteredWords));
+                    this.currentCardIndex = 0;
+                    this.isFlipped = false;
+                },
+                nextCard() {
+                    this.isFlipped = false;
+                    setTimeout(() => {
+                        if (this.currentCardIndex < this.flashcardQueue.length - 1) {
+                            this.currentCardIndex++;
+                        } else {
+                            this.currentCardIndex = 0; // 循環
+                        }
+                    }, 150);
+                },
+                prevCard() {
+                    this.isFlipped = false;
+                    setTimeout(() => {
+                        if (this.currentCardIndex > 0) {
+                            this.currentCardIndex--;
+                        } else {
+                            this.currentCardIndex = this.flashcardQueue.length - 1;
+                        }
+                    }, 150);
+                },
+                shuffleCards() {
+                    // Fisher-Yates Shuffle
+                    for (let i = this.flashcardQueue.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [this.flashcardQueue[i], this.flashcardQueue[j]] = [this.flashcardQueue[j], this.flashcardQueue[i]];
+                    }
+                    this.currentCardIndex = 0;
+                    this.isFlipped = false;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
