@@ -1,208 +1,344 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 設定網頁標題
-st.set_page_config(page_title="CHIMEI ABS 單字學習", layout="wide")
+# 設定頁面配置
+st.set_page_config(page_title="CHIMEI ABS 單字學習系統", layout="wide")
 
-# 這裡是原本的 HTML/JS 程式碼，我們把它包在一個 Python 字串裡
+# 這裡將前端的 HTML/JS/CSS 完整包裝成一個字串
 html_code = """
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>單字學習本</title>
+    <title>單字學習</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        .perspective { perspective: 1000px; }
-        .rotate-y-180 { transform: rotateY(180deg); }
-        .transform-style-preserve-3d { transform-style: preserve-3d; }
+        /* 隱藏滾動條但保持功能 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 卡片翻轉效果 */
+        .perspective-1000 { perspective: 1000px; }
+        .transform-style-3d { transform-style: preserve-3d; }
         .backface-hidden { backface-visibility: hidden; }
+        .rotate-y-180 { transform: rotateY(180deg); }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans" x-data="vocabApp()">
+<body class="bg-gray-50 text-gray-800 h-screen flex flex-col" x-data="appData()">
 
-    <div class="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-10">
-        <div class="max-w-2xl mx-auto">
-            <div class="flex justify-between items-center mb-4">
-                <h1 class="text-2xl font-bold" x-text="currentNotebookName"></h1>
-                <div class="flex gap-2">
-                    <button @click="renameNotebook()" class="text-xs bg-blue-500 hover:bg-blue-400 px-2 py-1 rounded">更名</button>
-                    <select x-model="currentNotebookId" class="text-black text-sm rounded px-2 py-1">
-                        <option value="1">工作專用 (ABS)</option>
-                        <option value="2">多益單字</option>
-                    </select>
-                </div>
+    <div class="bg-white shadow-sm border-b px-4 py-3 sticky top-0 z-20">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-book text-red-500"></i>
+                <h1 class="font-bold text-lg text-gray-800 cursor-pointer border-b border-transparent hover:border-gray-300" 
+                    @click="renameNotebook()" x-text="notebookName"></h1>
             </div>
-            <div class="flex flex-col gap-3">
-                <input x-model="searchQuery" type="text" placeholder="🔍 搜尋單字..." class="w-full px-3 py-2 rounded text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300">
-                <div class="flex justify-between items-center text-sm">
-                    <div class="flex gap-2 bg-blue-700 p-1 rounded">
-                        <button @click="viewMode = 'list'" :class="{'bg-white text-blue-800 shadow': viewMode === 'list'}" class="px-3 py-1 rounded transition">列表</button>
-                        <button @click="startFlashcard()" :class="{'bg-white text-blue-800 shadow': viewMode === 'card'}" class="px-3 py-1 rounded transition">卡片學習</button>
-                    </div>
-                    <label class="flex items-center gap-2 cursor-pointer select-none" x-show="viewMode === 'list'">
-                        <input type="checkbox" x-model="hideChinese" class="form-checkbox h-4 w-4 text-blue-600">
-                        <span>遮蔽中文</span>
-                    </label>
-                </div>
-            </div>
+            <div class="text-xs text-gray-400">ABS Process Dept.</div>
         </div>
     </div>
 
-    <div class="max-w-2xl mx-auto p-4 pb-24">
-        <div x-show="viewMode === 'list'">
-            <template x-for="word in filteredWords" :key="word.id">
-                <div class="bg-white rounded-lg shadow p-4 mb-3 flex justify-between items-center transition hover:shadow-md" :class="{'opacity-50': word.mastered}">
-                    <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-xl font-bold text-blue-900" x-text="word.text"></span>
-                            <button @click="speak(word.text)" class="text-gray-400 hover:text-blue-500">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                            </button>
-                        </div>
-                        <div class="text-gray-600" :class="{'blur-sm select-none': hideChinese, 'cursor-pointer': hideChinese}" @click="hideChinese = false" x-text="word.def"></div>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <button @click="toggleMastered(word.id)" class="text-gray-300 hover:text-green-500" :class="{'text-green-500': word.mastered}">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </button>
-                        <button @click="editWord(word)" class="text-gray-300 hover:text-blue-500">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                        </button>
-                        <button @click="deleteWord(word.id)" class="text-gray-300 hover:text-red-500">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.993.883L8 2.976 7.976 3H5a1 1 0 000 2h14a1 1 0 000-2h-2.976L16 2.976a1 1 0 00-.993-.883H9zM5.929 5h8.142l-.707 10.607a2 2 0 01-1.996 1.893H8.632a2 2 0 01-1.996-1.893L5.929 5z" clip-rule="evenodd" /></svg>
-                        </button>
-                    </div>
-                </div>
-            </template>
-            <div x-show="filteredWords.length === 0" class="text-center text-gray-500 mt-10">沒有找到單字，快按右下角新增吧！</div>
-        </div>
+    <div class="flex-1 overflow-y-auto p-4 pb-32 max-w-md mx-auto w-full">
+        
+        <button @click="openModal()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg shadow transition mb-6 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-plus"></i> 加入單字庫
+        </button>
 
-        <div x-show="viewMode === 'card'" class="h-[60vh] flex flex-col items-center justify-center">
-            <template x-if="flashcardQueue.length > 0">
-                <div class="w-full h-full relative perspective group cursor-pointer" @click="isFlipped = !isFlipped">
-                    <div class="w-full h-full relative transform-style-preserve-3d transition-transform duration-500 shadow-xl rounded-xl" :class="{'rotate-y-180': isFlipped}">
-                        <div class="absolute inset-0 backface-hidden bg-white rounded-xl flex flex-col items-center justify-center p-8 border-2 border-blue-100">
-                            <span class="text-sm text-gray-400 mb-4">點擊翻牌</span>
-                            <h2 class="text-4xl font-bold text-blue-800 text-center" x-text="currentCard.text"></h2>
-                            <button @click.stop="speak(currentCard.text)" class="mt-6 p-2 rounded-full bg-blue-50 text-blue-500 hover:bg-blue-100">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
-                            </button>
-                        </div>
-                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-blue-50 rounded-xl flex flex-col items-center justify-center p-8 border-2 border-blue-200">
-                            <span class="text-sm text-gray-400 mb-4">中文解釋</span>
-                            <p class="text-2xl font-medium text-gray-800 text-center" x-text="currentCard.def"></p>
-                        </div>
-                    </div>
-                </div>
-            </template>
-            <div class="flex items-center gap-6 mt-8" x-show="flashcardQueue.length > 0">
-                <button @click="prevCard()" class="px-4 py-2 bg-gray-200 rounded-full hover:bg-gray-300">上一張</button>
-                <button @click="shuffleCards()" class="px-4 py-2 bg-yellow-100 text-yellow-700 rounded-full hover:bg-yellow-200 flex items-center gap-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                    洗牌
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-4 overflow-hidden">
+            <div class="border-b border-gray-100">
+                <button @click="showSettings = !showSettings" class="w-full flex justify-between items-center p-3 bg-gray-50 text-sm font-medium text-gray-700">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-volume-high"></i> 發音設定</span>
+                    <i class="fa-solid" :class="showSettings ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                 </button>
-                <button @click="nextCard()" class="px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 shadow-lg">下一張</button>
+                
+                <div x-show="showSettings" class="p-4 space-y-4">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">口音 (Accent)</label>
+                        <select x-model="settings.accent" class="w-full border rounded p-2 text-sm bg-white">
+                            <option value="en-US">美式 (US)</option>
+                            <option value="en-GB">英式 (UK)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">語速 (Speed)</label>
+                        <div class="flex gap-4">
+                            <label class="flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="radio" name="speed" :value="1.0" x-model.number="settings.speed" class="text-red-500 focus:ring-red-500">
+                                正常 (Normal)
+                            </label>
+                            <label class="flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="radio" name="speed" :value="0.7" x-model.number="settings.speed" class="text-red-500 focus:ring-red-500">
+                                慢速 (Slow)
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div x-show="flashcardQueue.length === 0" class="text-center text-gray-500">目前沒有卡片可以複習。<br>請切換回列表新增單字。</div>
+
+            <div>
+                <button @click="showPlayback = !showPlayback" class="w-full flex justify-between items-center p-3 bg-gray-50 text-sm font-medium text-gray-700">
+                    <span class="flex items-center gap-2"><i class="fa-solid fa-headphones"></i> 播放順序</span>
+                    <i class="fa-solid" :class="showPlayback ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                </button>
+
+                <div x-show="showPlayback" class="p-4 bg-blue-50">
+                    <div class="flex gap-2 mb-3">
+                        <button @click="addToSequence('en')" class="flex-1 bg-white border border-gray-300 rounded py-2 text-sm hover:bg-gray-50 shadow-sm">
+                            <i class="fa-solid fa-plus text-xs"></i> 英文
+                        </button>
+                        <button @click="addToSequence('zh')" class="flex-1 bg-white border border-gray-300 rounded py-2 text-sm hover:bg-gray-50 shadow-sm">
+                            <i class="fa-solid fa-plus text-xs"></i> 中文
+                        </button>
+                        <button @click="settings.sequence = []" class="px-3 bg-white border border-gray-300 rounded text-red-500 hover:text-red-700 shadow-sm">
+                            <i class="fa-solid fa-xmark"></i> 清空
+                        </button>
+                    </div>
+                    
+                    <div class="bg-blue-100 rounded p-2 text-center text-sm font-medium text-blue-800 min-h-[40px] flex items-center justify-center gap-2 flex-wrap">
+                        <span class="text-gray-500 text-xs" x-show="settings.sequence.length === 0">順序：(請點擊上方按鈕加入)</span>
+                        <template x-for="(item, index) in settings.sequence" :key="index">
+                            <span class="bg-white px-2 py-1 rounded shadow-sm text-xs flex items-center">
+                                <span x-text="item === 'en' ? '英文' : '中文'"></span>
+                                <i class="fa-solid fa-arrow-right text-gray-300 ml-2" x-show="index !== settings.sequence.length - 1"></i>
+                            </span>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex border-b mb-4">
+            <button @click="mode = 'list'" :class="{'border-b-2 border-red-500 text-red-500': mode === 'list'}" class="flex-1 py-2 text-center font-medium text-gray-500 transition">列表</button>
+            <button @click="mode = 'card'; startCardMode()" :class="{'border-b-2 border-red-500 text-red-500': mode === 'card'}" class="flex-1 py-2 text-center font-medium text-gray-500 transition">卡片學習</button>
+        </div>
+
+        <div x-show="mode === 'list'" class="space-y-3">
+            <div class="relative">
+                <i class="fa-solid fa-search absolute left-3 top-3 text-gray-400"></i>
+                <input type="text" x-model="search" placeholder="搜尋單字..." class="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-200">
+            </div>
+
+            <template x-for="word in filteredWords" :key="word.id">
+                <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-red-400 flex justify-between items-start group">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-bold text-lg text-gray-800" x-text="word.en"></h3>
+                            <button @click="speakWord(word)" class="text-gray-400 hover:text-red-500">
+                                <i class="fa-solid fa-volume-high"></i>
+                            </button>
+                        </div>
+                        <p class="text-gray-600 mt-1 text-sm" x-text="word.zh"></p>
+                    </div>
+                    <div class="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button @click="editWord(word)" class="text-gray-400 hover:text-blue-500"><i class="fa-solid fa-pen"></i></button>
+                        <button @click="deleteWord(word.id)" class="text-gray-400 hover:text-red-500"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            </template>
+             <div x-show="filteredWords.length === 0" class="text-center text-gray-400 mt-8">
+                找不到單字，請新增
+            </div>
+        </div>
+
+        <div x-show="mode === 'card'" class="h-[60vh] flex flex-col items-center justify-center">
+            <template x-if="cardQueue.length > 0">
+                <div class="w-full h-full perspective-1000 cursor-pointer group" @click="isFlipped = !isFlipped">
+                    <div class="relative w-full h-full transition-all duration-500 transform-style-3d shadow-xl rounded-xl" :class="isFlipped ? 'rotate-y-180' : ''">
+                        <div class="absolute inset-0 backface-hidden bg-white rounded-xl flex flex-col items-center justify-center border-2 border-red-50">
+                            <span class="text-gray-400 text-xs mb-4">English</span>
+                            <h2 class="text-4xl font-bold text-gray-800 text-center px-4" x-text="currentCard.en"></h2>
+                            <button @click.stop="speakText(currentCard.en)" class="mt-6 w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100">
+                                <i class="fa-solid fa-volume-high text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="absolute inset-0 backface-hidden rotate-y-180 bg-red-50 rounded-xl flex flex-col items-center justify-center border-2 border-red-100">
+                            <span class="text-gray-500 text-xs mb-4">Chinese</span>
+                            <h2 class="text-3xl font-bold text-gray-800 text-center px-4" x-text="currentCard.zh"></h2>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <div class="flex items-center gap-6 mt-6" x-show="cardQueue.length > 0">
+                <button @click="prevCard()" class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center hover:bg-gray-100"><i class="fa-solid fa-arrow-left"></i></button>
+                <button @click="playCurrentSequence()" class="bg-red-500 text-white px-6 py-2 rounded-full shadow hover:bg-red-600 flex items-center gap-2">
+                    <i class="fa-solid fa-play"></i> 播放順序
+                </button>
+                <button @click="nextCard()" class="w-10 h-10 rounded-full bg-white shadow flex items-center justify-center hover:bg-gray-100"><i class="fa-solid fa-arrow-right"></i></button>
+            </div>
+             <div x-show="cardQueue.length === 0" class="text-center text-gray-400">
+                無卡片，請先在列表新增
+            </div>
         </div>
 
     </div>
 
-    <button @click="openAddModal()" class="fixed bottom-6 right-6 bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition transform hover:scale-110 z-20">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-    </button>
-
-    <div x-show="isModalOpen" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style="display: none;">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
-            <h3 class="text-xl font-bold mb-4" x-text="isEditing ? '編輯單字' : '新增單字'"></h3>
-            <div class="mb-3">
-                <label class="block text-sm font-medium text-gray-700 mb-1">英文單字</label>
-                <input x-model="modalForm.text" type="text" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+    <div x-show="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style="display: none;">
+        <div class="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 class="text-lg font-bold mb-4" x-text="isEdit ? '編輯單字' : '新增單字'"></h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">英文單字</label>
+                    <input type="text" x-model="form.en" class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">中文解釋</label>
+                    <input type="text" x-model="form.zh" class="w-full border rounded p-2 focus:ring-2 focus:ring-red-500 focus:outline-none">
+                </div>
             </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-1">中文解釋</label>
-                <textarea x-model="modalForm.def" rows="3" class="w-full border rounded px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
-            </div>
-            <div class="mb-4" x-show="isEditing">
-                 <label class="block text-sm font-medium text-gray-700 mb-1">移動到筆記本</label>
-                 <select x-model="modalForm.notebookId" class="w-full border rounded px-3 py-2">
-                    <option value="1">工作專用 (ABS)</option>
-                    <option value="2">多益單字</option>
-                 </select>
-            </div>
-            <div class="flex justify-end gap-2">
-                <button @click="isModalOpen = false" class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded">取消</button>
-                <button @click="saveWord()" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">儲存</button>
+            <div class="mt-6 flex justify-end gap-2">
+                <button @click="showModal = false" class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded">取消</button>
+                <button @click="saveWord()" class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">儲存</button>
             </div>
         </div>
     </div>
 
     <script>
-        function vocabApp() {
+        function appData() {
             return {
-                words: [
-                    { id: 1, notebookId: '1', text: 'Resin', def: '樹脂 (n.)', mastered: false },
-                    { id: 2, notebookId: '1', text: 'Injection Molding', def: '射出成型 (n.)', mastered: false },
-                    { id: 3, notebookId: '1', text: 'Viscosity', def: '黏度 (n.)', mastered: false },
-                    { id: 4, notebookId: '2', text: 'Agenda', def: '議程 (n.)', mastered: false },
-                    { id: 5, notebookId: '2', text: 'Proposal', def: '提案 (n.)', mastered: false }
-                ],
-                currentNotebookId: '1',
-                currentNotebookName: '工作專用 (ABS)',
-                searchQuery: '',
-                viewMode: 'list',
-                hideChinese: false,
-                isModalOpen: false,
-                isEditing: false,
-                modalForm: { id: null, text: '', def: '', notebookId: '1' },
-                flashcardQueue: [],
-                currentCardIndex: 0,
+                notebookName: '15002ABS 單字本',
+                mode: 'list', // 'list' or 'card'
+                search: '',
+                showSettings: true,
+                showPlayback: true,
+                showModal: false,
+                isEdit: false,
                 isFlipped: false,
+                
+                // 預設資料
+                words: [
+                    { id: 1, en: 'Extruder', zh: '擠出機' },
+                    { id: 2, en: 'Pelletizer', zh: '造粒機' },
+                    { id: 3, en: 'Maintenance', zh: '維修保養' },
+                    { id: 4, en: 'Safety First', zh: '安全第一' }
+                ],
+                
+                // 表單資料
+                form: { id: null, en: '', zh: '' },
 
-                init() {
-                    this.$watch('currentNotebookId', (val) => {
-                        this.currentNotebookName = val === '1' ? '工作專用 (ABS)' : '多益單字';
-                        this.viewMode = 'list';
-                    });
+                // 設定資料 (符合截圖需求)
+                settings: {
+                    accent: 'en-US', // en-US or en-GB
+                    speed: 1.0,      // 1.0 or 0.7
+                    sequence: ['en', 'zh', 'en'] // 預設: 英文 -> 中文 -> 英文
                 },
+
+                // 卡片模式佇列
+                cardQueue: [],
+                cardIndex: 0,
+
                 get filteredWords() {
-                    return this.words.filter(w => {
-                        const matchNotebook = w.notebookId === this.currentNotebookId;
-                        const matchSearch = w.text.toLowerCase().includes(this.searchQuery.toLowerCase()) || 
-                                          w.def.includes(this.searchQuery);
-                        return matchNotebook && matchSearch;
+                    if (this.search === '') return this.words;
+                    const lowSearch = this.search.toLowerCase();
+                    return this.words.filter(w => w.en.toLowerCase().includes(lowSearch) || w.zh.includes(lowSearch));
+                },
+
+                get currentCard() {
+                    return this.cardQueue[this.cardIndex] || { en: '', zh: '' };
+                },
+
+                // 更名功能
+                renameNotebook() {
+                    const newName = prompt('請輸入新的單字本名稱：', this.notebookName);
+                    if (newName) this.notebookName = newName;
+                },
+
+                // 播放順序設定功能
+                addToSequence(type) {
+                    this.settings.sequence.push(type);
+                },
+
+                // 語音合成核心
+                speakText(text, lang = 'en') {
+                    // 停止當前發音
+                    window.speechSynthesis.cancel();
+                    
+                    const u = new SpeechSynthesisUtterance(text);
+                    u.rate = this.settings.speed;
+                    
+                    if (lang === 'zh') {
+                        u.lang = 'zh-TW';
+                    } else {
+                        u.lang = this.settings.accent; 
+                    }
+                    
+                    window.speechSynthesis.speak(u);
+                    return new Promise(resolve => {
+                        u.onend = resolve;
                     });
                 },
-                get currentCard() { return this.flashcardQueue[this.currentCardIndex] || { text: '', def: '' }; },
-                speak(text) { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; speechSynthesis.speak(u); },
-                toggleMastered(id) { const w = this.words.find(w => w.id === id); if (w) w.mastered = !w.mastered; },
-                deleteWord(id) { if(confirm('確定要刪除？')) this.words = this.words.filter(w => w.id !== id); },
-                openAddModal() { this.isEditing = false; this.modalForm = { id: Date.now(), text: '', def: '', notebookId: this.currentNotebookId }; this.isModalOpen = true; },
-                editWord(word) { this.isEditing = true; this.modalForm = JSON.parse(JSON.stringify(word)); this.isModalOpen = true; },
-                saveWord() {
-                    if (!this.modalForm.text || !this.modalForm.def) return;
-                    if (this.isEditing) {
-                        const index = this.words.findIndex(w => w.id === this.modalForm.id);
-                        if (index !== -1) this.words[index] = { ...this.modalForm };
-                    } else {
-                        this.words.push({ ...this.modalForm, mastered: false });
+
+                // 依序播放 (重點功能)
+                async playCurrentSequence() {
+                    const word = this.currentCard;
+                    for (const type of this.settings.sequence) {
+                        if (type === 'en') {
+                            await this.speakText(word.en, 'en');
+                        } else if (type === 'zh') {
+                            await this.speakText(word.zh, 'zh');
+                        }
+                        // 簡單的間隔
+                        await new Promise(r => setTimeout(r, 500));
                     }
-                    this.isModalOpen = false;
-                    if(this.viewMode === 'card') this.startFlashcard();
                 },
-                renameNotebook() { const n = prompt('新名稱：', this.currentNotebookName); if (n) this.currentNotebookName = n; },
-                startFlashcard() { this.viewMode = 'card'; this.flashcardQueue = JSON.parse(JSON.stringify(this.filteredWords)); this.currentCardIndex = 0; this.isFlipped = false; },
-                nextCard() { this.isFlipped = false; setTimeout(() => { if (this.currentCardIndex < this.flashcardQueue.length - 1) this.currentCardIndex++; else this.currentCardIndex = 0; }, 150); },
-                prevCard() { this.isFlipped = false; setTimeout(() => { if (this.currentCardIndex > 0) this.currentCardIndex--; else this.currentCardIndex = this.flashcardQueue.length - 1; }, 150); },
-                shuffleCards() {
-                    for (let i = this.flashcardQueue.length - 1; i > 0; i--) {
-                        const j = Math.floor(Math.random() * (i + 1));
-                        [this.flashcardQueue[i], this.flashcardQueue[j]] = [this.flashcardQueue[j], this.flashcardQueue[i]];
+                
+                // 列表模式單點播放 (只唸英文)
+                speakWord(word) {
+                    this.speakText(word.en, 'en');
+                },
+
+                // CRUD
+                openModal() {
+                    this.isEdit = false;
+                    this.form = { id: Date.now(), en: '', zh: '' };
+                    this.showModal = true;
+                },
+                editWord(word) {
+                    this.isEdit = true;
+                    this.form = { ...word };
+                    this.showModal = true;
+                },
+                saveWord() {
+                    if (!this.form.en || !this.form.zh) return;
+                    if (this.isEdit) {
+                        const idx = this.words.findIndex(w => w.id === this.form.id);
+                        if (idx !== -1) this.words[idx] = { ...this.form };
+                    } else {
+                        this.words.push({ ...this.form });
                     }
-                    this.currentCardIndex = 0; this.isFlipped = false;
+                    this.showModal = false;
+                    if(this.mode === 'card') this.startCardMode();
+                },
+                deleteWord(id) {
+                    if(confirm('確定刪除?')) {
+                        this.words = this.words.filter(w => w.id !== id);
+                    }
+                },
+
+                // 卡片邏輯
+                startCardMode() {
+                    this.cardQueue = JSON.parse(JSON.stringify(this.filteredWords));
+                    this.cardIndex = 0;
+                    this.isFlipped = false;
+                },
+                nextCard() {
+                    this.isFlipped = false;
+                    setTimeout(() => {
+                        if (this.cardIndex < this.cardQueue.length - 1) this.cardIndex++;
+                        else this.cardIndex = 0;
+                    }, 200);
+                },
+                prevCard() {
+                    this.isFlipped = false;
+                    setTimeout(() => {
+                        if (this.cardIndex > 0) this.cardIndex--;
+                        else this.cardIndex = this.cardQueue.length - 1;
+                    }, 200);
                 }
             }
         }
@@ -211,5 +347,6 @@ html_code = """
 </html>
 """
 
-# 在 Streamlit 中渲染 HTML (設定高度為 800px 以容納內容)
-components.html(html_code, height=800, scrolling=True)
+# 使用 Streamlit 元件顯示 HTML
+# height 設定高一點以確保手機版也容易滑動
+components.html(html_code, height=900, scrolling=True)
