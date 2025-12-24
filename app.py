@@ -17,7 +17,7 @@ import random
 # --- 設定頁面 ---
 st.set_page_config(page_title="AI 智能單字速記通 (家庭版)", layout="wide", page_icon="🚀")
 
-# --- CSS 美化 (V24 更新：新增卡片樣式與按鈕優化) ---
+# --- CSS 美化 (V24.1: 修復語法錯誤 + 介面優化) ---
 st.markdown("""
 <style>
 /* 全局字體優化 */
@@ -200,9 +200,9 @@ def main():
     
     with col_header:
         st.title("🚀 AI 智能單字速記通")
-        st.caption("家庭雲端版 v24.0")
+        st.caption("家庭雲端版 v24.1")
 
-    # --- 2. 篩選邏輯 (為了讓數據正確，需先處理篩選) ---
+    # --- 2. 篩選邏輯 ---
     # 先在 session_state 抓取選單的值，如果沒有則預設為"全部"
     current_notebook = st.session_state.get('filter_nb_key', '全部')
     
@@ -231,7 +231,7 @@ def main():
 
     st.markdown("---")
 
-    # --- 3. 側邊欄 (保持新增功能，視覺減重) ---
+    # --- 3. 側邊欄 ---
     with st.sidebar:
         st.header("📝 新增單字")
         notebooks = df['Notebook'].unique().tolist()
@@ -318,12 +318,11 @@ def main():
                         st.session_state.confirm_del = False
                         st.rerun()
 
-    # --- 4. 主畫面工具區 (整合筆記本選擇與雙下載按鈕) ---
+    # --- 4. 主畫面工具區 ---
     st.subheader("📚 複習與工具區")
     
-    # 筆記本選擇 (這就是剛剛計算 current_notebook 的地方)
+    # 筆記本選擇
     nb_options = ["全部"] + df['Notebook'].unique().tolist()
-    # 使用 selectbox 並綁定 key，這樣上面的 metrics 才能抓到值
     sel_nb = st.selectbox("請選擇要複習的筆記本：", nb_options, key='filter_nb_key')
 
     # 工具按鈕區 (並排顯示)
@@ -344,11 +343,10 @@ def main():
             st.button("無資料可下載", disabled=True, use_container_width=True)
 
     with col_tool_2:
-        # 下載 MP3 (只下載目前篩選的資料 + 需設定順序)
+        # 下載 MP3
         if not filtered_df.empty and st.session_state.play_order:
             if st.button("🎧 製作並下載 MP3", use_container_width=True):
                 with st.spinner("正在合成語音 (請稍候)..."):
-                    # 預設發音設定
                     tld = st.session_state.get('accent_tld', 'com')
                     slow = st.session_state.get('is_slow', False)
                     audio_bytes = generate_custom_audio(filtered_df, st.session_state.play_order, tld=tld, slow=slow)
@@ -366,17 +364,17 @@ def main():
                 st.button("無資料可下載", disabled=True, use_container_width=True)
 
     # --- 5. 功能頁籤區 ---
-    st.markdown("###") # 增加一點間距
+    st.markdown("###")
     tab1, tab2, tab3, tab4 = st.tabs(["📋 單字列表", "🃏 翻卡學習", "🎬 自動播放", "🏆 測驗挑戰"])
 
     with tab1:
         st.markdown(f"**目前顯示：{current_notebook} ({len(filtered_df)} 字)**")
-        # 標題列
+        # 標題列 - 已修復這裡的引號錯誤
         h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
-        h1.markdown('**🇬🇧 單字 / 音標**')
-        h2.markdown("**🇹🇼 中文**')
-        h3.markdown("**功能**')
-        h4.markdown("**刪除**')
+        h1.markdown("**🇬🇧 單字 / 音標**")
+        h2.markdown("**🇹🇼 中文**")
+        h3.markdown("**功能**")
+        h4.markdown("**刪除**")
         st.divider()
 
         if not filtered_df.empty:
