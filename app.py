@@ -122,6 +122,7 @@ def is_contains_chinese(string):
 def to_excel(df):
     """將 DataFrame 轉為 Excel Bytes"""
     output = BytesIO()
+    # 使用 openpyxl 引擎寫入 Excel
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
@@ -174,10 +175,30 @@ def main():
     initialize_quiz_state()
     if 'play_order' not in st.session_state: st.session_state.play_order = ["英文", "中文", "英文"] 
 
-    # --- 頂部 ---
-    col_title, col_count = st.columns([3, 1])
-    with col_title: st.title("🚀 AI 智能單字速記通 (家庭版)")
-    with col_count: st.metric("📚 雲端總字數", f"{len(df)} 個")
+    # --- 計算目前筆記本字數 (預先計算) ---
+    # 這裡我們需要知道使用者選了哪個筆記本，才能在頂部顯示。
+    # 利用 session_state.get 取值，如果還沒選預設是"全部"
+    current_filter_nb = st.session_state.get('filter_nb_key', '全部')
+    
+    if current_filter_nb == "全部":
+        current_book_count = len(df)
+    else:
+        current_book_count = len(df[df['Notebook'] == current_filter_nb])
+
+    # --- 頂部顯示區 ---
+    # 調整佈局：標題佔 2, 總字數佔 1, 該本字數佔 1
+    col_title, col_total, col_current = st.columns([2, 1, 1])
+    
+    with col_title: 
+        st.title("🚀 AI 智能單字速記通 (家庭版)")
+    
+    with col_total: 
+        st.metric("☁️ 雲端總字數", f"{len(df)}")
+    
+    with col_current:
+        # 顯示當前選中筆記本的字數
+        label_text = "📖 目前本子字數" if current_filter_nb != "全部" else "📖 全部單字數"
+        st.metric(label_text, f"{current_book_count}")
 
     # --- 側邊欄 ---
     with st.sidebar:
@@ -274,24 +295,12 @@ def main():
         st.info(f"順序：\n**{order_str if order_str else '(未選)'}**")
 
     # --- 進階管理 ---
-    with st.sidebar.expander("🛠️ 進階管理 (備份/刪除)"):
+    with st.sidebar.expander("🛠️ 進階管理 (刪除筆記本)"):
         if st.button("🔄 強制雲端更新"):
             st.session_state.df = get_google_sheet_data()
             st.success("已更新！")
             st.rerun()
         
-        # 新增的 Excel 下載按鈕
-        st.markdown("---")
-        if not df.empty:
-            excel_data = to_excel(df)
-            st.download_button(
-                label="📥 下載 Excel 備份",
-                data=excel_data,
-                file_name=f'vocab_backup_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            )
-
-        st.markdown("---")
         manage_list = df['Notebook'].unique().tolist()
         if manage_list:
             target_nb = st.selectbox("選擇要刪除的筆記本", manage_list, key="m_nb")
@@ -307,23 +316,54 @@ def main():
                     st.rerun()
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("版本: v22.0 (Excel 備份修復版)")
+    st.sidebar.caption("版本: v23.0 (Excel 下載修復版)")
 
+    # --- 主畫面過濾區 & 下載區 ---
     col_filter, col_mp3 = st.columns([2, 1])
+    
     with col_filter:
-        filter_nb = st.selectbox("📖 我要複習哪一本？", ["全部"] + df['Notebook'].unique().tolist())
+        # 這裡設定 key='filter_nb_key' 讓上面的程式碼可以抓到這個值
+        filter_nb = st.selectbox("📖 我要複習哪一本？", ["全部"] + df['Notebook'].unique().tolist(), key='filter_nb_key')
+    
     filtered_df = df if filter_nb == "全部" else df[df['Notebook'] == filter_nb]
     
-    st.info(f"📊 本子內共有 **{len(filtered_df)}** 個單字")
+    st.info(f"📊 篩選後共有 **{len(filtered_df)}** 個單字")
 
     with col_mp3:
-        st.write("🎧 **通勤下載**")
-        if not filtered_df.empty and st.session_state.play_order:
-            if st.button("下載自訂順序 MP3"):
-                with st.spinner("生成中..."):
-                    audio_bytes = generate_custom_audio(filtered_df, st.session_state.play_order, tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
-                    st.download_button(label="📥 下載 MP3", data=audio_bytes, file_name=f"vocab_custom.mp3", mime="audio/mp3")
-        else: st.button("無資料", disabled=True)
+        st.write("🎧 **工具區**")
+        # 下載 Excel 按鈕 (移到這裡)
+        if not filtered_df.empty:
+             # Excel 下載
+            excel_data = to_excel(filtered_df) # 這裡改為只下載篩選後的，或全部 df，看您需求。通常備份是備份全部。
+            # 如果要備份全部，請將 filtered_df 改為 df。這裡假設您想下載看到的資料。
+            # 為了備份安全，我們還是預設下載「全部資料」比較保險，或者您可以選擇下載 filtered_df
+            # 這裡我們下載 "全部 (df)" 以便於備份，若只想下載該本，改為 filtered_df 即可
+            
+            c_down_1, c_down_2 = st.columns(2)
+            with c_down_1:
+                st.download_button(
+                    label="📥 下載 Excel",
+                    data=to_excel(df), # 下載完整資料庫
+                    file_name=f'vocab_backup_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True
+                )
+
+            with c_down_2:
+                if st.session_state.play_order:
+                     # MP3 下載邏輯
+                     # 注意：MP3 產生比較慢，使用 filtered_df (目前本子)
+                    pass # 按鈕在下面渲染，這裡只是佔位
+                else:
+                    pass
+
+            if not filtered_df.empty and st.session_state.play_order:
+                if st.button("下載自訂順序 MP3", use_container_width=True):
+                    with st.spinner("生成中..."):
+                        audio_bytes = generate_custom_audio(filtered_df, st.session_state.play_order, tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
+                        st.download_button(label="📥 點擊下載 MP3", data=audio_bytes, file_name=f"vocab_custom.mp3", mime="audio/mp3", use_container_width=True)
+        else:
+            st.button("無資料", disabled=True)
 
     tab1, tab2, tab3, tab4 = st.tabs(["📋 單字列表", "🃏 學習卡片", "🎬 學習卡撥放", "🏆 測驗挑戰"])
 
@@ -345,7 +385,6 @@ def main():
                 with c3:
                     if st.button("🔊 播放", key=f"l_p_{index}"):
                         st.markdown(text_to_speech_visible(row['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
-                    # 這裡加上 str() 防止報錯
                     encoded_word = urllib.parse.quote(str(row['Word']))
                     google_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={encoded_word}&op=translate"
                     st.markdown(f"[G 翻譯]({google_url})")
