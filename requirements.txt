@@ -5,4 +5,5 @@ deep-translator
 eng_to_ipa
 gspread
 oauth2client
+openpyxl
 
