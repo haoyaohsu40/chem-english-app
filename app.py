@@ -17,7 +17,7 @@ import random
 # --- 設定頁面 ---
 st.set_page_config(page_title="AI 智能單字速記通 (家庭版)", layout="wide", page_icon="🚀")
 
-# --- CSS 美化 (V24.1: 修復語法錯誤 + 介面優化) ---
+# --- CSS 美化 ---
 st.markdown("""
 <style>
 /* 全局字體優化 */
@@ -200,18 +200,15 @@ def main():
     
     with col_header:
         st.title("🚀 AI 智能單字速記通")
-        st.caption("家庭雲端版 v24.1")
+        st.caption("家庭雲端版 v24.2")
 
     # --- 2. 篩選邏輯 ---
-    # 先在 session_state 抓取選單的值，如果沒有則預設為"全部"
     current_notebook = st.session_state.get('filter_nb_key', '全部')
     
-    # 計算數字
     total_count = len(df)
     filtered_df = df if current_notebook == "全部" else df[df['Notebook'] == current_notebook]
     current_count = len(filtered_df)
 
-    # 在右上角渲染數據卡片
     with col_metrics_area:
         m1, m2 = st.columns(2)
         with m1:
@@ -231,7 +228,7 @@ def main():
 
     st.markdown("---")
 
-    # --- 3. 側邊欄 ---
+    # --- 3. 側邊欄 (修復：加回設定功能) ---
     with st.sidebar:
         st.header("📝 新增單字")
         notebooks = df['Notebook'].unique().tolist()
@@ -243,6 +240,10 @@ def main():
 
         st.markdown("---")
         input_mode = st.radio("輸入模式", ["🔤 單字輸入", "🚀 批次貼上"], horizontal=True)
+
+        # 設定預設值 (確保狀態存在)
+        if 'accent_tld' not in st.session_state: st.session_state.accent_tld = 'com'
+        if 'is_slow' not in st.session_state: st.session_state.is_slow = False
 
         if input_mode == "🔤 單字輸入":
             word_input = st.text_input("輸入英文單字", placeholder="例如: Valve")
@@ -257,7 +258,7 @@ def main():
                         except: st.error("失敗")
             with c2:
                 if st.button("🔊 試聽", use_container_width=True):
-                    if word_input: st.markdown(text_to_speech_visible(word_input, 'en'), unsafe_allow_html=True)
+                    if word_input: st.markdown(text_to_speech_visible(word_input, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if word_input and notebook and not is_contains_chinese(word_input):
@@ -299,6 +300,40 @@ def main():
                             time.sleep(1)
                             st.rerun()
 
+        # --- 補回：發音與順序設定 ---
+        st.markdown("---")
+        with st.expander("🔊 發音與語速設定", expanded=False):
+            accents = {'美式 (US)': 'com', '英式 (UK)': 'co.uk', '澳式 (AU)': 'com.au', '印度 (IN)': 'co.in'}
+            # 找出目前設定的 index
+            curr_acc_val = st.session_state.accent_tld
+            # 反查 key
+            default_acc_key = [k for k, v in accents.items() if v == curr_acc_val]
+            default_acc_key = default_acc_key[0] if default_acc_key else '美式 (US)'
+            
+            selected_accent = st.selectbox("口音", list(accents.keys()), index=list(accents.keys()).index(default_acc_key))
+            st.session_state.accent_tld = accents[selected_accent]
+            
+            speeds = {'正常 (Normal)': False, '慢速 (Slow)': True}
+            # 反查 speed index
+            curr_speed_val = st.session_state.is_slow
+            default_spd_key = [k for k, v in speeds.items() if v == curr_speed_val]
+            default_spd_key = default_spd_key[0] if default_spd_key else '正常 (Normal)'
+
+            selected_speed = st.radio("語速", list(speeds.keys()), index=list(speeds.keys()).index(default_spd_key))
+            st.session_state.is_slow = speeds[selected_speed]
+
+        with st.expander("🎧 播放順序設定", expanded=True):
+            c1, c2, c3 = st.columns([1, 1, 1])
+            with c1: 
+                if st.button("➕ 英文"): st.session_state.play_order.append("英文")
+            with c2: 
+                if st.button("➕ 中文"): st.session_state.play_order.append("中文")
+            with c3: 
+                if st.button("❌ 清空"): st.session_state.play_order = []
+            
+            order_str = " ➝ ".join(st.session_state.play_order)
+            st.caption(f"目前順序：\n{order_str if order_str else '(未設定)'}")
+
         st.markdown("---")
         with st.expander("🛠️ 進階管理"):
             if st.button("🔄 強制雲端更新"):
@@ -321,15 +356,12 @@ def main():
     # --- 4. 主畫面工具區 ---
     st.subheader("📚 複習與工具區")
     
-    # 筆記本選擇
     nb_options = ["全部"] + df['Notebook'].unique().tolist()
     sel_nb = st.selectbox("請選擇要複習的筆記本：", nb_options, key='filter_nb_key')
 
-    # 工具按鈕區 (並排顯示)
     col_tool_1, col_tool_2 = st.columns(2)
     
     with col_tool_1:
-        # 下載 Excel (只下載目前篩選的資料)
         if not filtered_df.empty:
             file_name_xls = f"Vocab_{current_notebook if current_notebook != '全部' else 'All'}.xlsx"
             st.download_button(
@@ -343,7 +375,6 @@ def main():
             st.button("無資料可下載", disabled=True, use_container_width=True)
 
     with col_tool_2:
-        # 下載 MP3
         if not filtered_df.empty and st.session_state.play_order:
             if st.button("🎧 製作並下載 MP3", use_container_width=True):
                 with st.spinner("正在合成語音 (請稍候)..."):
@@ -369,7 +400,6 @@ def main():
 
     with tab1:
         st.markdown(f"**目前顯示：{current_notebook} ({len(filtered_df)} 字)**")
-        # 標題列 - 已修復這裡的引號錯誤
         h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
         h1.markdown("**🇬🇧 單字 / 音標**")
         h2.markdown("**🇹🇼 中文**")
@@ -386,7 +416,7 @@ def main():
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3:
                     if st.button("🔊", key=f"l_p_{index}"):
-                        st.markdown(text_to_speech_visible(row['Word'], 'en'), unsafe_allow_html=True)
+                        st.markdown(text_to_speech_visible(row['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
                 with c4:
                     if st.button("🗑️", key=f"l_d_{index}"):
                         df = df[~((df['Word'] == row['Word']) & (df['Notebook'] == row['Notebook']))]
@@ -424,7 +454,7 @@ def main():
                         st.info(f"💡 {row['Chinese']}")
                 with b2:
                     if st.button("🔊 播放發音", use_container_width=True):
-                        st.markdown(text_to_speech_visible(row['Word'], 'en'), unsafe_allow_html=True)
+                        st.markdown(text_to_speech_visible(row['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
 
     with tab3:
         st.info("自動輪播您目前的單字列表")
@@ -445,9 +475,9 @@ def main():
                     for step in st.session_state.play_order:
                         slide_placeholder.empty(); time.sleep(0.1)
                         if step == "英文":
-                            slide_placeholder.markdown(f"""<div style="border:2px solid #4CAF50;border-radius:20px;padding:40px;text-align:center;background-color:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{word}</div><div style="font-size:28px;color:#666;">{ipa}</div><div style="height:50px;color:#aaa;">(Listen...)</div>{text_to_speech_autoplay_hidden(word, 'en')}</div>""", unsafe_allow_html=True)
+                            slide_placeholder.markdown(f"""<div style="border:2px solid #4CAF50;border-radius:20px;padding:40px;text-align:center;background-color:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{word}</div><div style="font-size:28px;color:#666;">{ipa}</div><div style="height:50px;color:#aaa;">(Listen...)</div>{text_to_speech_autoplay_hidden(word, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)}</div>""", unsafe_allow_html=True)
                         elif step == "中文":
-                            slide_placeholder.markdown(f"""<div style="border:2px solid #4CAF50;border-radius:20px;padding:40px;text-align:center;background-color:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{word}</div><div style="font-size:28px;color:#666;">{ipa}</div><div style="font-size:50px;color:#1565C0;font-weight:bold;margin-top:20px;">{chinese}</div>{text_to_speech_autoplay_hidden(chinese, 'zh-TW')}</div>""", unsafe_allow_html=True)
+                            slide_placeholder.markdown(f"""<div style="border:2px solid #4CAF50;border-radius:20px;padding:40px;text-align:center;background-color:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{word}</div><div style="font-size:28px;color:#666;">{ipa}</div><div style="font-size:50px;color:#1565C0;font-weight:bold;margin-top:20px;">{chinese}</div>{text_to_speech_autoplay_hidden(chinese, 'zh-TW', slow=st.session_state.is_slow)}</div>""", unsafe_allow_html=True)
                         time.sleep(delay_sec)
                 slide_placeholder.success("播放結束！")
 
@@ -467,7 +497,7 @@ def main():
             current_q = st.session_state.quiz_current
             
             st.markdown(f"""<div class="quiz-card"><div style="font-size:20px;color:#666;">請聽發音並選出正確中文：</div><div class="quiz-word">{current_q['Word']}</div><div style="color:#888;">{current_q['IPA']}</div></div>""", unsafe_allow_html=True)
-            st.markdown(text_to_speech_visible(current_q['Word'], 'en'), unsafe_allow_html=True)
+            st.markdown(text_to_speech_visible(current_q['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
