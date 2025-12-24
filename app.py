@@ -39,37 +39,25 @@ div[data-testid="stMetricValue"] { font-size: 24px; color: #d32f2f; }
 """, unsafe_allow_html=True)
 
 # --- 核心：連接 Google Sheets ---
-# 這是最重要的部分，負責跟你的雲端試算表講話
 def get_google_sheet_data():
     """連接 Google Sheets 並回傳 DataFrame"""
     try:
-        # 從 Secrets 讀取鑰匙
-        # 注意：這裡對應你在 Secrets 裡設定的名稱 [service_account] info
         creds_json = json.loads(st.secrets["service_account"]["info"])
-        
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
         client = gspread.authorize(creds)
-        
-        # 開啟試算表
         sheet = client.open("vocab_db").sheet1
-        
-        # 讀取所有資料
         data = sheet.get_all_records()
         
-        # 如果是空的，回傳一個空的 DataFrame 但要有欄位
         if not data:
             df = pd.DataFrame(columns=['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
-            # 順便把標題寫進去，避免下次還是空的
             sheet.append_row(['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
             return df
             
         return pd.DataFrame(data)
     
     except Exception as e:
-        # 如果連線失敗，回傳錯誤訊息，方便除錯
         st.error(f"連線 Google Sheets 失敗：{e}")
-        # 回傳一個空的 DataFrame 避免程式崩潰
         return pd.DataFrame(columns=['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
 
 def save_to_google_sheet(df):
@@ -80,22 +68,16 @@ def save_to_google_sheet(df):
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_json, scope)
         client = gspread.authorize(creds)
         sheet = client.open("vocab_db").sheet1
-        
-        # 清空舊資料
         sheet.clear()
-        
-        # 寫入新資料 (包含標題)
-        # 這裡將 DataFrame 轉為 list of lists
         update_data = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(update_data)
-        
     except Exception as e:
         st.error(f"儲存失敗：{e}")
 
-# --- 其他輔助函數 (維持不變) ---
+# --- 輔助函數 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
     try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
+        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
         if not clean_text: return ""
         tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
         fp = BytesIO()
@@ -106,7 +88,7 @@ def text_to_speech_visible(text, lang='en', tld='com', slow=False):
 
 def text_to_speech_autoplay_hidden(text, lang='en', tld='com', slow=False):
     try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', text)
+        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
         if not clean_text: return ""
         tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
         fp = BytesIO()
@@ -133,9 +115,16 @@ def generate_custom_audio(df, sequence, tld='com', slow=False):
     return fp.getvalue()
 
 def is_contains_chinese(string):
-    for char in string:
+    for char in str(string):
         if '\u4e00' <= char <= '\u9fff': return True
     return False
+
+def to_excel(df):
+    """將 DataFrame 轉為 Excel Bytes"""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+    return output.getvalue()
 
 # --- 測驗函數 ---
 def initialize_quiz_state():
@@ -150,15 +139,15 @@ def next_question(df):
     if df.empty: return
     target_row = df.sample(1).iloc[0]
     st.session_state.quiz_current = target_row
-    correct_opt = target_row['Chinese']
+    correct_opt = str(target_row['Chinese'])
     other_rows = df[df['Chinese'] != correct_opt]
     distractors = []
-    if len(other_rows) >= 3: distractors = other_rows.sample(3)['Chinese'].tolist()
+    if len(other_rows) >= 3: distractors = other_rows.sample(3)['Chinese'].astype(str).tolist()
     else:
         placeholders = ["蘋果", "閥門", "幫浦", "螺絲", "溫度", "壓力", "反應器"]
         candidates = [p for p in placeholders if p != correct_opt]
         needed = 3 - len(other_rows)
-        distractors = other_rows['Chinese'].tolist() + random.sample(candidates, min(len(candidates), needed))
+        distractors = other_rows['Chinese'].astype(str).tolist() + random.sample(candidates, min(len(candidates), needed))
         while len(distractors) < 3: distractors.append("未知單字")
     options = [correct_opt] + distractors
     random.shuffle(options)
@@ -169,15 +158,13 @@ def next_question(df):
 def check_answer(user_choice):
     st.session_state.quiz_answered = True
     st.session_state.quiz_total += 1
-    if user_choice == st.session_state.quiz_current['Chinese']:
+    if user_choice == str(st.session_state.quiz_current['Chinese']):
         st.session_state.quiz_score += 1
         st.session_state.quiz_is_correct = True
     else: st.session_state.quiz_is_correct = False
 
 # --- 主程式 ---
 def main():
-    # 1. 讀取資料 (改為從 Google Sheets 讀取)
-    # 使用快取載入，避免每次點擊都重新連線
     if 'df' not in st.session_state:
         with st.spinner('正在連線雲端資料庫...'):
             st.session_state.df = get_google_sheet_data()
@@ -234,11 +221,8 @@ def main():
                             trans = GoogleTranslator(source='auto', target='zh-TW').translate(word_input)
                             new_entry = {'Notebook': notebook, 'Word': word_input, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
                             
-                            # 更新 Session State
                             df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
                             st.session_state.df = df
-                            
-                            # 寫入 Google Sheet
                             save_to_google_sheet(df)
                             
                             st.success(f"已儲存：{word_input}")
@@ -289,19 +273,31 @@ def main():
         order_str = " ➝ ".join(st.session_state.play_order)
         st.info(f"順序：\n**{order_str if order_str else '(未選)'}**")
 
-    # --- 進階管理 (新增手動同步按鈕) ---
-    with st.sidebar.expander("🛠️ 進階管理"):
-        if st.button("🔄 強制從雲端更新資料"):
+    # --- 進階管理 ---
+    with st.sidebar.expander("🛠️ 進階管理 (備份/刪除)"):
+        if st.button("🔄 強制雲端更新"):
             st.session_state.df = get_google_sheet_data()
-            st.success("資料已更新！")
+            st.success("已更新！")
             st.rerun()
-            
+        
+        # 新增的 Excel 下載按鈕
+        st.markdown("---")
+        if not df.empty:
+            excel_data = to_excel(df)
+            st.download_button(
+                label="📥 下載 Excel 備份",
+                data=excel_data,
+                file_name=f'vocab_backup_{pd.Timestamp.now().strftime("%Y%m%d")}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+
+        st.markdown("---")
         manage_list = df['Notebook'].unique().tolist()
         if manage_list:
-            target_nb = st.selectbox("管理筆記本", manage_list, key="m_nb")
+            target_nb = st.selectbox("選擇要刪除的筆記本", manage_list, key="m_nb")
             if st.button("🗑️ 刪除此筆記本"):
                 if st.session_state.get('confirm_del') != True:
-                    st.warning("請再按一次確認刪除")
+                    st.warning("請再按一次確認")
                     st.session_state.confirm_del = True
                 else:
                     df = df[df['Notebook'] != target_nb]
@@ -311,7 +307,7 @@ def main():
                     st.rerun()
 
     st.sidebar.markdown("---")
-    st.sidebar.caption("版本: v21.0 (家庭雲端同步版)")
+    st.sidebar.caption("版本: v22.0 (Excel 備份修復版)")
 
     col_filter, col_mp3 = st.columns([2, 1])
     with col_filter:
@@ -349,7 +345,8 @@ def main():
                 with c3:
                     if st.button("🔊 播放", key=f"l_p_{index}"):
                         st.markdown(text_to_speech_visible(row['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
-                    encoded_word = urllib.parse.quote(row['Word'])
+                    # 這裡加上 str() 防止報錯
+                    encoded_word = urllib.parse.quote(str(row['Word']))
                     google_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={encoded_word}&op=translate"
                     st.markdown(f"[G 翻譯]({google_url})")
                 with c4:
@@ -377,7 +374,7 @@ def main():
                     </div>
                     """, unsafe_allow_html=True)
                 st.markdown("###")
-                encoded_img_word = urllib.parse.quote(row['Word'])
+                encoded_img_word = urllib.parse.quote(str(row['Word']))
                 st.link_button("🖼️ Google 圖片搜尋", f"https://www.google.com/search?tbm=isch&q={encoded_img_word}+image", use_container_width=True)
 
                 c_show, c_aud = st.columns(2)
@@ -410,7 +407,7 @@ def main():
                 st.toast("播放中...")
                 play_list = filtered_df.iloc[::-1]
                 for index, row in play_list.iterrows():
-                    word = row['Word']; chinese = row['Chinese']; ipa = row['IPA']
+                    word = str(row['Word']); chinese = str(row['Chinese']); ipa = str(row['IPA'])
                     for step in st.session_state.play_order:
                         slide_placeholder.empty(); time.sleep(0.1)
                         if step == "英文":
