@@ -117,7 +117,7 @@ def to_excel(df):
 
 # --- 語音相關 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
-    """產生可見的播放器"""
+    """產生可見的播放器 (修復版：加入隨機 ID 防止瀏覽器快取舊音訊)"""
     try:
         clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
         if not clean_text: return ""
@@ -125,7 +125,9 @@ def text_to_speech_visible(text, lang='en', tld='com', slow=False):
         fp = BytesIO()
         tts.write_to_fp(fp)
         b64 = base64.b64encode(fp.getvalue()).decode()
-        return f"""<audio controls autoplay style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+        # 關鍵修正：加入 unique_id，強迫瀏覽器重新渲染 Audio 標籤
+        unique_id = f"audio_visible_{uuid.uuid4()}" 
+        return f"""<audio id="{unique_id}" controls autoplay style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     except: return ""
 
 def text_to_speech_autoplay_hidden(text, lang='en', tld='com', slow=False):
@@ -137,7 +139,7 @@ def text_to_speech_autoplay_hidden(text, lang='en', tld='com', slow=False):
         fp = BytesIO()
         tts.write_to_fp(fp)
         b64 = base64.b64encode(fp.getvalue()).decode()
-        unique_id = f"audio_{uuid.uuid4()}"
+        unique_id = f"audio_hidden_{uuid.uuid4()}"
         return f"""<audio autoplay style="display:none;" id="{unique_id}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     except: return ""
 
@@ -149,7 +151,6 @@ def generate_custom_audio(df, sequence, tld='com', slow=False):
         word = str(row['Word'])
         chinese = str(row['Chinese'])
         
-        # 簡單提示
         full_text += f"Number {i}. " 
         
         if not sequence:
@@ -235,7 +236,7 @@ def main():
     
     with col_header:
         st.title("🚀 AI 智能單字速記通")
-        st.caption("家庭雲端版 v24.2")
+        st.caption("家庭雲端版 v26.0 (Quiz Fix)")
 
     # 取得目前篩選的筆記本 (從下方 Selectbox 取得狀態，若無則預設全部)
     current_notebook_filter = st.session_state.get('filter_nb_key', '全部')
@@ -383,7 +384,7 @@ def main():
             
             st.divider()
             
-            # 修改筆記本名稱功能 (加回來的)
+            # 修改筆記本名稱功能
             st.write("✏️ **修改筆記本名稱**")
             rename_target_nb = st.selectbox("選擇要改名的筆記本", notebooks_list, key="rename_select")
             new_name_input = st.text_input("輸入新名稱", key="rename_input")
@@ -416,6 +417,10 @@ def main():
                     st.session_state.confirm_del_nb = None
                     time.sleep(1)
                     st.rerun()
+        
+        # 這裡加回左下角的版本號
+        st.markdown("---")
+        st.caption("版本: v26.0 (Quiz Fixed)")
 
     # --- 主畫面：工具區與複習區 ---
     st.divider()
@@ -597,7 +602,7 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            # 自動播放題目發音
+            # 自動播放題目發音 (修復：確保每次載入新題目時，音訊ID都不同)
             st.markdown(text_to_speech_visible(q['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
