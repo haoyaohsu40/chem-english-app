@@ -14,61 +14,52 @@ import uuid
 import random
 
 # ==========================================
-# 1. 頁面設定與 CSS 樣式 (極致美化版)
+# 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (備考衝刺版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (多用戶版)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-    
-    /* 1. 隱藏預設選單 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* 2. 標題區塊美化 */
-    .title-container {
-        text-align: center;
-        padding: 20px 0 40px 0;
-        background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+    /* 登入畫面樣式 */
+    .login-container {
+        background-color: white;
+        padding: 40px;
         border-radius: 20px;
-        margin-bottom: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        text-align: center;
+        max-width: 500px;
+        margin: 50px auto;
+        border-top: 10px solid #4CAF50;
+    }
+
+    /* 標題與組件優化 */
+    .title-container {
+        text-align: center; padding: 20px 0 40px 0;
+        background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+        border-radius: 20px; margin-bottom: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
     .main-title {
-        font-size: 42px;
-        font-weight: 900;
+        font-size: 42px; font-weight: 900;
         background: -webkit-linear-gradient(45deg, #1565C0, #42A5F5);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin: 0;
-        padding: 0;
-        font-family: 'Arial Black', sans-serif;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        margin: 0; padding: 0; font-family: 'Arial Black', sans-serif;
     }
-    .sub-title {
-        font-size: 16px;
-        color: #78909c;
-        margin-top: 8px;
-        font-weight: 600;
-        letter-spacing: 1.5px;
-    }
+    .sub-title { font-size: 16px; color: #78909c; margin-top: 8px; font-weight: 600; letter-spacing: 1.5px; }
 
-    /* 3. 數據卡片 */
     .metric-card {
-        background: #ffffff;
-        border-left: 6px solid #4CAF50;
-        border-radius: 12px;
-        padding: 15px 10px;
-        text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        margin-bottom: 10px;
-        transition: transform 0.2s;
+        background: #ffffff; border-left: 6px solid #4CAF50; border-radius: 12px;
+        padding: 15px 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        margin-bottom: 10px; transition: transform 0.2s;
     }
     .metric-card:hover { transform: translateY(-3px); }
     .metric-label { font-size: 16px; color: #546e7a; font-weight: bold; margin-bottom: 4px; }
     .metric-value { font-size: 36px; font-weight: 800; color: #2e7d32; }
 
-    /* 4. 按鈕優化 */
     .stButton>button { 
         border-radius: 12px; font-weight: bold; border: none;
         box-shadow: 0 4px 6px rgba(0,0,0,0.08); transition: all 0.2s;
@@ -76,11 +67,9 @@ st.markdown("""
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
 
-    /* 5. 字體放大區 */
     .stRadio label p, .stCheckbox label p, .stSelectbox label p, .stTextInput label p { font-size: 18px !important; }
     .stMarkdown p { font-size: 18px; }
 
-    /* 6. 卡片樣式 */
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
@@ -94,7 +83,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 核心功能函式
+# 2. 核心功能函式 (資料庫結構變更：加入 User 欄位)
 # ==========================================
 
 def get_google_sheet_data():
@@ -105,11 +94,12 @@ def get_google_sheet_data():
         client = gspread.authorize(creds)
         sheet = client.open("vocab_db").sheet1
         data = sheet.get_all_records()
-        if not data: return pd.DataFrame(columns=['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
+        # 新增 'User' 欄位
+        if not data: return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
         return pd.DataFrame(data)
     except Exception as e:
         st.error(f"連線失敗：{e}")
-        return pd.DataFrame(columns=['Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
+        return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
 
 def save_to_google_sheet(df):
     try:
@@ -119,6 +109,13 @@ def save_to_google_sheet(df):
         client = gspread.authorize(creds)
         sheet = client.open("vocab_db").sheet1
         sheet.clear()
+        # 確保 User 欄位在最前面
+        cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
+        # 確保 df 包含所有欄位，如果沒有則補上
+        for c in cols:
+            if c not in df.columns: df[c] = ""
+        df = df[cols] # 重新排序
+        
         update_data = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(update_data)
     except Exception as e:
@@ -129,9 +126,11 @@ def is_contains_chinese(string):
         if '\u4e00' <= char <= '\u9fff': return True
     return False
 
-def check_duplicate(df, notebook, word):
+def check_duplicate(df, user, notebook, word):
+    """檢查該使用者在該筆記本是否有重複單字"""
     if df.empty: return False
-    mask = (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
+    # 這裡多加了 User 的判斷
+    mask = (df['User'] == user) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
     return not df[mask].empty
 
 def to_excel(df):
@@ -191,11 +190,18 @@ def generate_custom_audio(df, sequence, tld='com', slow=False):
     tts.write_to_fp(fp)
     return fp.getvalue()
 
-def add_to_mistake_notebook(row):
+def add_to_mistake_notebook(row, user):
     df = st.session_state.df
     mistake_nb_name = "🔥 錯題本 (Auto)"
-    if not check_duplicate(df, mistake_nb_name, row['Word']):
-        new_entry = {'Notebook': mistake_nb_name,'Word': row['Word'],'IPA': row['IPA'],'Chinese': row['Chinese'],'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
+    if not check_duplicate(df, user, mistake_nb_name, row['Word']):
+        new_entry = {
+            'User': user, # 加上 User
+            'Notebook': mistake_nb_name,
+            'Word': row['Word'],
+            'IPA': row['IPA'],
+            'Chinese': row['Chinese'],
+            'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+        }
         df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
         st.session_state.df = df; save_to_google_sheet(df)
         return True
@@ -206,11 +212,14 @@ def add_to_mistake_notebook(row):
 # ==========================================
 
 def initialize_session_state():
+    # 登入狀態初始化
+    if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+    if 'current_user' not in st.session_state: st.session_state.current_user = None
+
     if 'df' not in st.session_state: st.session_state.df = get_google_sheet_data()
     if 'play_order' not in st.session_state: st.session_state.play_order = ["英文", "中文", "英文"] 
     if 'accent_tld' not in st.session_state: st.session_state.accent_tld = 'com'
     if 'is_slow' not in st.session_state: st.session_state.is_slow = False
-    
     if 'current_mode' not in st.session_state: st.session_state.current_mode = 'list'
     
     if 'quiz_score' not in st.session_state: st.session_state.quiz_score = 0
@@ -233,7 +242,8 @@ def next_question(df):
     target_row = df.sample(1).iloc[0]
     st.session_state.quiz_current = target_row
     correct_opt = str(target_row['Chinese'])
-    all_df = st.session_state.df 
+    # 從使用者自己的單字庫找干擾項
+    all_df = df 
     other_rows = all_df[all_df['Chinese'] != correct_opt]
     
     if len(other_rows) >= 3: distractors = other_rows.sample(3)['Chinese'].astype(str).tolist()
@@ -259,7 +269,8 @@ def check_answer(user_choice):
         st.session_state.quiz_is_correct = True
     else:
         st.session_state.quiz_is_correct = False
-        if add_to_mistake_notebook(current): st.toast(f"已加入錯題本: {current['Word']}", icon="🔥")
+        if add_to_mistake_notebook(current, st.session_state.current_user): 
+            st.toast(f"已加入錯題本: {current['Word']}", icon="🔥")
 
 def next_spelling(df):
     if df.empty: return
@@ -280,21 +291,48 @@ def check_spelling():
             st.session_state.spell_correct = True
         else:
             st.session_state.spell_correct = False
-            if add_to_mistake_notebook(st.session_state.spell_current): st.toast(f"已加入錯題本: {st.session_state.spell_current['Word']}", icon="🔥")
+            if add_to_mistake_notebook(st.session_state.spell_current, st.session_state.current_user): 
+                st.toast(f"已加入錯題本: {st.session_state.spell_current['Word']}", icon="🔥")
 
 # ==========================================
 # 4. 主程式 Layout
 # ==========================================
 
-def main():
-    initialize_session_state()
-    df = st.session_state.df
+def login_page():
+    st.markdown("""
+        <div class="login-container">
+            <h1 style="color: #2E7D32;">🚀 學生登入</h1>
+            <p style="color: #666; font-size: 18px;">請輸入您的學號或姓名以進入系統</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        user_input = st.text_input("學號 / 姓名", placeholder="例如: s12345 或 王小明")
+        if st.button("🚀 登入系統", use_container_width=True, type="primary"):
+            if user_input.strip():
+                st.session_state.current_user = user_input.strip()
+                st.session_state.logged_in = True
+                st.rerun()
+            else:
+                st.error("請輸入名稱")
+
+def main_app():
+    df_all = st.session_state.df
+    current_user = st.session_state.current_user
+    
+    # --- 關鍵步驟：只篩選出當前使用者的資料 ---
+    # 如果資料表裡沒有 User 欄位 (舊資料)，暫時視為空字串，避免報錯
+    if 'User' not in df_all.columns:
+        df_all['User'] = ""
+        
+    df = df_all[df_all['User'] == current_user]
 
     # 1. 標題區
-    st.markdown("""
+    st.markdown(f"""
         <div class="title-container">
             <h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1>
-            <div class="sub-title">打造您的專屬英文單字庫 • 智慧記憶 • 效率學習</div>
+            <div class="sub-title">歡迎回來，{current_user}！ • 您的專屬學習空間</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -316,6 +354,12 @@ def main():
 
     # 3. 側邊欄
     with st.sidebar:
+        st.info(f"👤 目前使用者：**{current_user}**")
+        if st.button("🚪 登出"):
+            st.session_state.logged_in = False
+            st.rerun()
+        st.divider()
+
         st.header("📝 新增單字")
         if '預設筆記本' not in notebooks: notebooks.append('預設筆記本')
         
@@ -339,16 +383,24 @@ def main():
             
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
-                    if check_duplicate(df, target_nb, w_in):
+                    if check_duplicate(df, current_user, target_nb, w_in):
                         st.warning(f"⚠️ 單字 '{w_in}' 已經在 '{target_nb}' 裡面囉！")
                     else:
                         try:
                             ipa = f"[{eng_to_ipa.convert(w_in)}]"
                             trans = GoogleTranslator(source='auto', target='zh-TW').translate(w_in)
-                            new = {'Notebook': target_nb, 'Word': w_in, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
-                            df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
-                            st.session_state.df = df
-                            save_to_google_sheet(df)
+                            new = {
+                                'User': current_user, # 標記使用者
+                                'Notebook': target_nb, 
+                                'Word': w_in, 
+                                'IPA': ipa, 
+                                'Chinese': trans, 
+                                'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                            }
+                            # 更新原始大表 df_all
+                            df_all = pd.concat([df_all, pd.DataFrame([new])], ignore_index=True)
+                            st.session_state.df = df_all # 更新 session
+                            save_to_google_sheet(df_all) # 存入雲端
                             st.success(f"已儲存：{w_in}")
                             time.sleep(0.5); st.rerun()
                         except Exception as e: st.error(f"錯誤: {e}")
@@ -364,20 +416,27 @@ def main():
                     for i, w in enumerate(words):
                         w = w.strip()
                         if w and not is_contains_chinese(w):
-                            if check_duplicate(df, target_nb, w):
+                            if check_duplicate(df, current_user, target_nb, w):
                                 skipped_count += 1
                             else:
                                 try:
                                     ipa = f"[{eng_to_ipa.convert(w)}]"
                                     trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                                    new_entries.append({'Notebook': target_nb, 'Word': w, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')})
+                                    new_entries.append({
+                                        'User': current_user, # 標記使用者
+                                        'Notebook': target_nb, 
+                                        'Word': w, 
+                                        'IPA': ipa, 
+                                        'Chinese': trans, 
+                                        'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                                    })
                                 except: pass
                         bar.progress((i+1)/len(words))
                     
                     if new_entries:
-                        df = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-                        st.session_state.df = df
-                        save_to_google_sheet(df)
+                        df_all = pd.concat([df_all, pd.DataFrame(new_entries)], ignore_index=True)
+                        st.session_state.df = df_all
+                        save_to_google_sheet(df_all)
                         st.success(f"✅ 成功加入 {len(new_entries)} 筆 (已自動過濾 {skipped_count} 筆重複)")
                         time.sleep(2); st.rerun()
                     elif skipped_count > 0:
@@ -410,8 +469,9 @@ def main():
             ren_new = st.text_input("輸入新名稱", key='ren_val')
             if st.button("確認更名"):
                 if ren_new and ren_new != ren_target:
-                    df.loc[df['Notebook'] == ren_target, 'Notebook'] = ren_new
-                    st.session_state.df = df; save_to_google_sheet(df)
+                    # 只修改當前使用者的筆記本名稱
+                    df_all.loc[(df_all['User'] == current_user) & (df_all['Notebook'] == ren_target), 'Notebook'] = ren_new
+                    st.session_state.df = df_all; save_to_google_sheet(df_all)
                     st.success(f"已更名為 {ren_new}"); time.sleep(1); st.rerun()
             
             st.write("🗑️ **刪除筆記本**")
@@ -420,12 +480,12 @@ def main():
                 if st.session_state.get('confirm_del') != del_target:
                     st.warning("再按一次確認"); st.session_state.confirm_del = del_target
                 else:
-                    df = df[df['Notebook'] != del_target]
-                    st.session_state.df = df; save_to_google_sheet(df); st.success("已刪除"); st.rerun()
+                    # 只刪除當前使用者的筆記本
+                    df_all = df_all[~((df_all['User'] == current_user) & (df_all['Notebook'] == del_target))]
+                    st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
-        # 這裡加回版本號
         st.markdown("---")
-        st.caption("版本: v31.0 (Spelling Feedback)")
+        st.caption("版本: v32.0 (Multi-User)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -475,8 +535,9 @@ def main():
                     if st.button("🔊", key=f"p{i}"): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
                 with c4:
                     if st.button("🗑️", key=f"d{i}"):
-                        df = df[~((df['Word'] == row['Word']) & (df['Notebook'] == row['Notebook']))]
-                        st.session_state.df = df; save_to_google_sheet(df); st.rerun()
+                        # 只刪除當前使用者的這筆資料
+                        df_all = df_all[~((df_all['User'] == current_user) & (df_all['Word'] == row['Word']) & (df_all['Notebook'] == row['Notebook']))]
+                        st.session_state.df = df_all; save_to_google_sheet(df_all); st.rerun()
                 st.divider()
         else: st.info("目前無單字")
 
@@ -577,10 +638,16 @@ def main():
             else:
                 if st.session_state.spell_correct: st.success(f"🎉 拼對了！ {sq['Word']}"); st.balloons()
                 else: 
-                    # 這裡加入了詳細的錯誤反饋
                     st.error(f"❌ 拼錯了...\n\n您的輸入：**{st.session_state.spell_input}**\n\n正確答案：**{sq['Word']}**")
                 
                 if st.button("➡️ 下一題", type="primary"): next_spelling(target_df); st.rerun()
+
+def main():
+    initialize_session_state()
+    if not st.session_state.logged_in:
+        login_page()
+    else:
+        main_app()
 
 if __name__ == "__main__":
     main()
