@@ -14,11 +14,10 @@ import uuid
 import random
 
 # ==========================================
-# 1. 頁面設定與 CSS 樣式 (UI 大升級)
+# 1. 頁面設定與 CSS 樣式 (UI 精緻化)
 # ==========================================
 st.set_page_config(page_title="AI 智能單字速記通 (家庭版)", layout="wide", page_icon="🎓")
 
-# 這裡包含了字體放大、隱藏選單、按鈕樣式優化
 st.markdown("""
 <style>
     /* 全局字體設定 */
@@ -28,29 +27,43 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* 2. 字體放大專區 (針對使用者圈選區域) */
-    
-    /* Radio Button & Checkbox 文字 */
+    /* 2. 標題美化 (置中 + 漸層色) */
+    .title-container {
+        text-align: center;
+        padding: 10px 0 30px 0;
+    }
+    .main-title {
+        font-size: 48px;
+        font-weight: 900;
+        background: -webkit-linear-gradient(45deg, #1a237e, #0288d1);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0;
+        padding: 0;
+        font-family: 'Arial Black', sans-serif;
+    }
+    .sub-title {
+        font-size: 18px;
+        color: #666;
+        margin-top: 5px;
+        font-weight: bold;
+    }
+
+    /* 3. 字體放大專區 */
     .stRadio label p, .stCheckbox label p { font-size: 20px !important; }
-    
-    /* Selectbox (下拉選單) 標題與選項 */
     .stSelectbox label p { font-size: 20px !important; font-weight: bold; }
     div[data-baseweb="select"] div { font-size: 18px !important; }
-    
-    /* Text Input & Text Area 標題 */
     .stTextInput label p, .stTextArea label p { font-size: 18px !important; }
-    
-    /* 一般文字 (Markdown) */
     .stMarkdown p { font-size: 18px; }
 
-    /* 3. 按鈕優化 */
+    /* 4. 按鈕優化 */
     .stButton>button { 
         border-radius: 12px; 
         font-weight: bold; 
         border: none;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         transition: all 0.2s;
-        font-size: 18px !important; /* 按鈕文字加大 */
+        font-size: 18px !important; 
         padding: 10px 24px;
         height: auto;
     }
@@ -59,35 +72,37 @@ st.markdown("""
         box-shadow: 0 6px 12px rgba(0,0,0,0.2); 
     }
 
-    /* 4. 數據卡片 (Metric Card) 字體加大 */
+    /* 5. 數據卡片 (Metric Card) 縮小與精緻化 */
     .metric-card {
-        background-color: #ffffff; 
-        border: 3px solid #4CAF50; 
-        border-radius: 15px;
-        padding: 20px; 
-        text-align: center; 
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
-        margin-bottom: 20px;
+        background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%);
+        border-left: 5px solid #4CAF50; /* 左側綠色線條裝飾 */
+        border-radius: 12px;
+        padding: 15px; /* 減少內距，讓卡片變小 */
+        text-align: center;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        margin-bottom: 15px;
     }
     .metric-label { 
-        font-size: 22px; /* 標題加大 */
+        font-size: 18px; /* 字體稍微縮小適配 */
         color: #555; 
-        margin-bottom: 10px; 
+        margin-bottom: 5px; 
         font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
     .metric-value { 
-        font-size: 56px; /* 數字超大 */
-        font-weight: bold; 
-        color: #d32f2f; 
-        line-height: 1.2;
+        font-size: 42px; /* 數字適度縮小 */
+        font-weight: 800; 
+        color: #2E7D32; 
+        line-height: 1.1;
     }
 
-    /* 5. 單字顯示區優化 */
+    /* 6. 單字顯示區優化 */
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
 
-    /* 6. 測驗卡片優化 */
+    /* 7. 測驗卡片優化 */
     .quiz-card {
         background-color: #fff8e1; padding: 40px; border-radius: 20px;
         text-align: center; border: 4px dashed #ffb74d; margin-bottom: 20px;
@@ -218,10 +233,8 @@ def initialize_session_state():
     if 'accent_tld' not in st.session_state: st.session_state.accent_tld = 'com'
     if 'is_slow' not in st.session_state: st.session_state.is_slow = False
     
-    # 導航模式狀態 (預設為列表)
     if 'current_mode' not in st.session_state: st.session_state.current_mode = 'list'
     
-    # 測驗與拼字狀態
     if 'quiz_score' not in st.session_state: st.session_state.quiz_score = 0
     if 'quiz_total' not in st.session_state: st.session_state.quiz_total = 0
     if 'quiz_current' not in st.session_state: st.session_state.quiz_current = None
@@ -299,19 +312,20 @@ def main():
     initialize_session_state()
     df = st.session_state.df
 
-    # 1. 標題 (移除版本號)
-    st.title("AI 智能單字速記通")
+    # 1. 標題區 (置中美化 + Emoji)
+    st.markdown("""
+        <div class="title-container">
+            <h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1>
+            <div class="sub-title">打造您的專屬英文單字庫 • 智慧記憶 • 效率學習</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # 2. 數據卡片 (字體已 CSS 放大)
+    # 2. 數據卡片 (縮小精緻版)
     notebooks = df['Notebook'].unique().tolist()
     if "🔥 錯題本 (Auto)" not in notebooks: notebooks.append("🔥 錯題本 (Auto)")
     
-    # 全局篩選器狀態
     if 'filter_nb_key' not in st.session_state: st.session_state.filter_nb_key = '全部'
-    
-    # 這裡調整為：若刪除了當前選中的筆記本，則重置為全部
-    if st.session_state.filter_nb_key not in ["全部"] + notebooks:
-        st.session_state.filter_nb_key = "全部"
+    if st.session_state.filter_nb_key not in ["全部"] + notebooks: st.session_state.filter_nb_key = "全部"
 
     current_nb = st.session_state.filter_nb_key
     filtered_df = df if current_nb == "全部" else df[df['Notebook'] == current_nb]
@@ -347,7 +361,6 @@ def main():
             
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
-                    # 檢查重複
                     if check_duplicate(df, target_nb, w_in):
                         st.warning(f"⚠️ 單字 '{w_in}' 已經在 '{target_nb}' 裡面囉！")
                     else:
@@ -394,7 +407,6 @@ def main():
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
-            # 設定保持原樣
             accents = {'美式 (US)': 'com', '英式 (UK)': 'co.uk', '澳式 (AU)': 'com.au', '印度 (IN)': 'co.in'}
             curr_acc = [k for k, v in accents.items() if v == st.session_state.accent_tld][0]
             st.session_state.accent_tld = accents[st.selectbox("口音", list(accents.keys()), index=list(accents.keys()).index(curr_acc))]
@@ -433,7 +445,7 @@ def main():
                     df = df[df['Notebook'] != del_target]
                     st.session_state.df = df; save_to_google_sheet(df); st.success("已刪除"); st.rerun()
 
-    # 4. 主畫面控制區 (篩選 + 工具)
+    # 4. 主畫面控制區
     st.divider()
     c_filt, c_tool = st.columns([1, 1.5])
     with c_filt:
@@ -441,7 +453,7 @@ def main():
         if current_nb == "🔥 錯題本 (Auto)": st.warning("🔥 這是您的錯題本，請重點複習！")
 
     with c_tool:
-        st.markdown("**🎧 工具區**") # 標題稍微加粗
+        st.markdown("**🎧 工具區**")
         t1, t2 = st.columns(2)
         with t1:
             if not filtered_df.empty:
@@ -455,14 +467,10 @@ def main():
                         st.download_button("⬇️ 下載 MP3", mp3, f"Audio_{current_nb}.mp3", "audio/mp3", use_container_width=True)
             else: st.button("🎵 設定順序後下載", disabled=True, use_container_width=True)
 
-    # 5. 導航按鈕區 (取代 Tabs)
-    st.markdown("###") # 空格
-    # 定義 5 個按鈕欄位
+    # 5. 導航按鈕區
+    st.markdown("###")
     n1, n2, n3, n4, n5 = st.columns(5)
-    
-    # 根據目前的 mode 決定按鈕樣式 (primary 為紅色亮起，secondary 為灰色)
-    def btn_type(mode_name):
-        return "primary" if st.session_state.current_mode == mode_name else "secondary"
+    def btn_type(mode_name): return "primary" if st.session_state.current_mode == mode_name else "secondary"
 
     if n1.button("📋 列表", type=btn_type('list'), use_container_width=True): st.session_state.current_mode = 'list'; st.rerun()
     if n2.button("🃏 卡片", type=btn_type('card'), use_container_width=True): st.session_state.current_mode = 'card'; st.rerun()
@@ -472,10 +480,9 @@ def main():
     
     st.divider()
 
-    # 6. 內容顯示區 (根據 mode 顯示對應內容)
+    # 6. 內容顯示區
     mode = st.session_state.current_mode
 
-    # --- Mode: 列表 ---
     if mode == 'list':
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
@@ -491,7 +498,6 @@ def main():
                 st.divider()
         else: st.info("目前無單字")
 
-    # --- Mode: 卡片 ---
     elif mode == 'card':
         if not filtered_df.empty:
             if 'card_idx' not in st.session_state: st.session_state.card_idx = 0
@@ -500,10 +506,10 @@ def main():
             
             c_p, c_c, c_n = st.columns([1, 4, 1])
             with c_p: 
-                st.write(""); st.write(""); st.write("") # Spacer
+                st.write(""); st.write(""); st.write("") 
                 if st.button("◀ 上一個", use_container_width=True): st.session_state.card_idx -= 1; st.rerun()
             with c_n: 
-                st.write(""); st.write(""); st.write("") # Spacer
+                st.write(""); st.write(""); st.write("") 
                 if st.button("下一個 ▶", use_container_width=True): st.session_state.card_idx += 1; st.rerun()
             with c_c:
                 st.markdown(f"""<div style="border:3px solid #81C784;border-radius:20px;padding:60px;text-align:center;min-height:350px;"><div style="font-size:70px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:28px;">{row['IPA']}</div></div>""", unsafe_allow_html=True)
@@ -514,7 +520,6 @@ def main():
                     if st.button("🔊 聽發音", use_container_width=True): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
         else: st.info("無單字")
 
-    # --- Mode: 輪播 ---
     elif mode == 'slide':
         delay = st.slider("每張卡片停留秒數", 2, 8, 3)
         ph = st.empty()
@@ -531,7 +536,6 @@ def main():
                         ph.markdown(html, unsafe_allow_html=True); time.sleep(delay)
                 ph.success("輪播結束")
 
-    # --- Mode: 測驗 ---
     elif mode == 'quiz':
         q_mode = st.radio("🎯 測驗範圍", ["📖 當前筆記本", "🔥 錯題本"], horizontal=True, key="qm")
         target_df = df[df['Notebook'] == "🔥 錯題本 (Auto)"] if q_mode == "🔥 錯題本" else filtered_df
@@ -563,7 +567,6 @@ def main():
                 else: st.error(f"❌ 錯誤。正確：{q['Chinese']}")
                 if st.button("➡️ 下一題", type="primary", use_container_width=True): next_question(target_df); st.rerun()
 
-    # --- Mode: 拼字 ---
     elif mode == 'spell':
         s_mode = st.radio("🎯 拼寫範圍", ["📖 當前筆記本", "🔥 錯題本"], horizontal=True, key="sm")
         target_df = df[df['Notebook'] == "🔥 錯題本 (Auto)"] if s_mode == "🔥 錯題本" else filtered_df
