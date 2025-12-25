@@ -18,6 +18,7 @@ import random
 # ==========================================
 st.set_page_config(page_title="AI 智能單字速記通 (家庭版)", layout="wide", page_icon="🚀")
 
+# 這裡加入隱藏右上角選單的 CSS，既然無法改中文，不如讓介面清爽一點
 st.markdown("""
 <style>
     /* 全局字體 */
@@ -64,6 +65,10 @@ st.markdown("""
         margin-bottom: 20px;
     }
     .quiz-word { font-size: 40px; color: #333; font-weight: bold; margin: 10px 0; }
+    
+    /* 隱藏右上角 Streamlit 預設選單 (因為無法改中文) */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,9 +120,9 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- 語音相關 ---
+# --- 語音相關 (列表模式用 HTML，測驗模式用原生 Audio) ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
-    """產生可見的播放器 (修復版：加入隨機 ID 防止瀏覽器快取舊音訊)"""
+    """產生可見的播放器 (用於列表模式)"""
     try:
         clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
         if not clean_text: return ""
@@ -125,10 +130,21 @@ def text_to_speech_visible(text, lang='en', tld='com', slow=False):
         fp = BytesIO()
         tts.write_to_fp(fp)
         b64 = base64.b64encode(fp.getvalue()).decode()
-        # 關鍵修正：加入 unique_id，強迫瀏覽器重新渲染 Audio 標籤
+        # 加入隨機 ID 盡量減少列表模式的快取問題
         unique_id = f"audio_visible_{uuid.uuid4()}" 
-        return f"""<audio id="{unique_id}" controls autoplay style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+        return f"""<audio id="{unique_id}" controls style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     except: return ""
+
+def get_audio_bytes(text, lang='en', tld='com', slow=False):
+    """直接產生音訊 Bytes (用於測驗模式，確保絕對不快取)"""
+    try:
+        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
+        if not clean_text: return None
+        tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
+        fp = BytesIO()
+        tts.write_to_fp(fp)
+        return fp
+    except: return None
 
 def text_to_speech_autoplay_hidden(text, lang='en', tld='com', slow=False):
     """產生隱藏的自動播放器"""
@@ -236,7 +252,7 @@ def main():
     
     with col_header:
         st.title("🚀 AI 智能單字速記通")
-        st.caption("家庭雲端版 v26.0 (Quiz Fix)")
+        st.caption("家庭雲端版 v26.1 (Quiz Audio Fix)")
 
     # 取得目前篩選的筆記本 (從下方 Selectbox 取得狀態，若無則預設全部)
     current_notebook_filter = st.session_state.get('filter_nb_key', '全部')
@@ -418,9 +434,8 @@ def main():
                     time.sleep(1)
                     st.rerun()
         
-        # 這裡加回左下角的版本號
         st.markdown("---")
-        st.caption("版本: v26.0 (Quiz Fixed)")
+        st.caption("版本: v26.1 (Quiz Audio Fix)")
 
     # --- 主畫面：工具區與複習區 ---
     st.divider()
@@ -602,8 +617,12 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            # 自動播放題目發音 (修復：確保每次載入新題目時，音訊ID都不同)
-            st.markdown(text_to_speech_visible(q['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
+            # --- 修正重點：使用 st.audio 原生元件取代 HTML ---
+            # 這樣可以確保每次單字更換時，播放器內容一定會強制更新
+            audio_bytes = get_audio_bytes(q['Word'], 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
+            if audio_bytes:
+                # 使用 key=q['Word'] 確保單字改變時，整個播放器會被重建
+                st.audio(audio_bytes, format='audio/mp3')
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
