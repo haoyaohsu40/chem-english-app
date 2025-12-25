@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (學生備考版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (備考衝刺版)", layout="wide", page_icon="🎓")
 
 # 隱藏右上角選單 + 自定義樣式
 st.markdown("""
@@ -45,6 +45,9 @@ st.markdown("""
     }
     .quiz-word { font-size: 40px; color: #333; font-weight: bold; margin: 10px 0; }
     
+    /* 錯誤特訓模式的特別樣式 */
+    .mistake-mode { border: 3px solid #f44336 !important; background-color: #ffebee !important; }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
@@ -197,7 +200,9 @@ def next_question(df):
     target_row = df.sample(1).iloc[0]
     st.session_state.quiz_current = target_row
     correct_opt = str(target_row['Chinese'])
-    other_rows = df[df['Chinese'] != correct_opt]
+    # 從全部資料庫找干擾項，避免錯題本太少無法產生選項
+    all_df = st.session_state.df 
+    other_rows = all_df[all_df['Chinese'] != correct_opt]
     
     if len(other_rows) >= 3: distractors = other_rows.sample(3)['Chinese'].astype(str).tolist()
     else:
@@ -264,12 +269,13 @@ def main():
     col_header, col_metrics_area = st.columns([2, 2])
     with col_header:
         st.title("🎓 AI 智能單字速記通")
-        st.caption("學生備考版 v27.0 (Spelling + MistakeBook)")
+        st.caption("備考衝刺版 v28.0 (Mistake Booster)")
 
-    # 筆記本篩選 (特別標註錯題本)
+    # 筆記本清單
     notebooks = df['Notebook'].unique().tolist()
     if "🔥 錯題本 (Auto)" not in notebooks: notebooks.append("🔥 錯題本 (Auto)")
     
+    # 全局篩選器狀態
     current_notebook_filter = st.session_state.get('filter_nb_key', '全部')
     filtered_df = df if current_notebook_filter == "全部" else df[df['Notebook'] == current_notebook_filter]
     
@@ -357,8 +363,21 @@ def main():
             st.info(f"順序：{' ➝ '.join(st.session_state.play_order) if st.session_state.play_order else '(未設定)'}")
 
         st.markdown("---")
-        with st.expander("🛠️ 進階管理"):
+        with st.expander("🛠️ 進階管理 (含更名)"):
             if st.button("🔄 強制更新"): st.session_state.df = get_google_sheet_data(); st.success("已更新"); st.rerun()
+            st.divider()
+            
+            # --- 1. 找回更名功能 ---
+            st.write("✏️ **更名筆記本**")
+            rename_target = st.selectbox("選擇對象", notebooks, key='ren_sel')
+            rename_new = st.text_input("輸入新名稱", key='ren_val')
+            if st.button("確認更名"):
+                if rename_new and rename_new != rename_target:
+                    df.loc[df['Notebook'] == rename_target, 'Notebook'] = rename_new
+                    st.session_state.df = df; save_to_google_sheet(df)
+                    st.success(f"已更名為 {rename_new}"); time.sleep(1); st.rerun()
+                else: st.warning("請輸入有效名稱")
+            
             st.divider()
             st.write("🗑️ **刪除筆記本**")
             del_nb = st.selectbox("選擇刪除對象", notebooks, key="del_sel")
@@ -368,7 +387,7 @@ def main():
                 else:
                     df = df[df['Notebook'] != del_nb]
                     st.session_state.df = df; save_to_google_sheet(df); st.success("已刪除"); st.rerun()
-        st.markdown("---"); st.caption("v27.0 Student Edition")
+        st.markdown("---"); st.caption("v28.0 Mistake Booster")
 
     st.divider()
     c_filt, c_tool = st.columns([1, 1.5])
@@ -449,19 +468,39 @@ def main():
                         ph.markdown(html, unsafe_allow_html=True); time.sleep(delay)
                 ph.success("結束")
 
-    # Tab 4: 選擇測驗
+    # Tab 4: 選擇測驗 (新增：錯誤特訓切換)
     with tab4:
+        # --- 2. 新增特訓模式切換按鈕 ---
+        quiz_mode = st.radio("🎯 測驗範圍", ["📖 測驗當前筆記本", "🔥 只測錯題本"], horizontal=True, key="q_mode")
+        
+        # 根據模式決定要測驗的單字群 (target_quiz_df)
+        if quiz_mode == "🔥 只測錯題本":
+            target_quiz_df = df[df['Notebook'] == "🔥 錯題本 (Auto)"]
+        else:
+            target_quiz_df = filtered_df
+
         c_s, c_r = st.columns([3, 1])
         rate = (st.session_state.quiz_score/st.session_state.quiz_total)*100 if st.session_state.quiz_total>0 else 0
         c_s.markdown(f"📊 答對：**{st.session_state.quiz_score}** / **{st.session_state.quiz_total}** ({rate:.1f}%)")
         if c_r.button("🔄 重置"): st.session_state.quiz_score=0; st.session_state.quiz_total=0; st.rerun()
         st.divider()
 
-        if filtered_df.empty: st.warning("無單字")
+        if target_quiz_df.empty:
+            if quiz_mode == "🔥 只測錯題本": st.success("🎉 太棒了！您的錯題本目前是空的！")
+            else: st.warning("無單字可測驗")
         else:
-            if st.session_state.quiz_current is None: next_question(filtered_df)
+            # 如果切換模式後，當前題目不在新的 dataframe 範圍內，強制換題
+            if st.session_state.quiz_current is None or st.session_state.quiz_current['Word'] not in target_quiz_df['Word'].values:
+                next_question(target_quiz_df)
+                st.rerun()
+            
             q = st.session_state.quiz_current
-            st.markdown(f"""<div class="quiz-card"><div style="color:#555;">請選出正確中文 (答錯將自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
+            
+            # 視覺提示：如果是錯題本模式，顯示紅色邊框
+            card_class = "quiz-card mistake-mode" if quiz_mode == "🔥 只測錯題本" else "quiz-card"
+            title_text = "🔥 錯誤特訓中 (答錯單字)" if quiz_mode == "🔥 只測錯題本" else "請選出正確中文 (答錯自動加入錯題本)"
+            
+            st.markdown(f"""<div class="{card_class}"><div style="color:#555;">{title_text}</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
             if ab: st.audio(ab, format='audio/mp3')
@@ -473,22 +512,39 @@ def main():
             else:
                 if st.session_state.quiz_is_correct: st.success("🎉 正確！"); st.balloons()
                 else: st.error(f"❌ 錯誤。正確：{q['Chinese']}")
-                if st.button("➡️ 下一題", type="primary", use_container_width=True): next_question(filtered_df); st.rerun()
+                if st.button("➡️ 下一題", type="primary", use_container_width=True): next_question(target_quiz_df); st.rerun()
 
-    # Tab 5: 拼字測驗 (新功能)
+    # Tab 5: 拼字測驗 (新增：錯誤特訓切換)
     with tab5:
+        # --- 3. 新增拼字特訓切換按鈕 ---
+        spell_mode = st.radio("🎯 拼寫範圍", ["📖 測驗當前筆記本", "🔥 只測錯題本"], horizontal=True, key="s_mode")
+        
+        if spell_mode == "🔥 只測錯題本":
+            target_spell_df = df[df['Notebook'] == "🔥 錯題本 (Auto)"]
+        else:
+            target_spell_df = filtered_df
+
         c_ss, c_sr = st.columns([3, 1])
         s_rate = (st.session_state.spell_score/st.session_state.spell_total)*100 if st.session_state.spell_total>0 else 0
         c_ss.markdown(f"✍️ 拼寫：**{st.session_state.spell_score}** / **{st.session_state.spell_total}** ({s_rate:.1f}%)")
         if c_sr.button("🔄 重置拼寫"): st.session_state.spell_score=0; st.session_state.spell_total=0; st.rerun()
         st.divider()
 
-        if filtered_df.empty: st.warning("無單字")
+        if target_spell_df.empty:
+            if spell_mode == "🔥 只測錯題本": st.success("🎉 太棒了！錯題本是空的！")
+            else: st.warning("無單字")
         else:
-            if st.session_state.spell_current is None: next_spelling(filtered_df)
+             # 強制換題檢查
+            if st.session_state.spell_current is None or st.session_state.spell_current['Word'] not in target_spell_df['Word'].values:
+                next_spelling(target_spell_df)
+                st.rerun()
+
             sq = st.session_state.spell_current
             
-            st.markdown(f"""<div class="quiz-card"><div style="color:#555;">請聽發音並輸入英文 (答錯自動加入錯題本)</div><div style="font-size:30px;color:#1565C0;font-weight:bold;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
+            card_class = "quiz-card mistake-mode" if spell_mode == "🔥 只測錯題本" else "quiz-card"
+            title_text = "🔥 錯誤拼寫特訓" if spell_mode == "🔥 只測錯題本" else "請聽發音並輸入英文 (答錯自動加入錯題本)"
+
+            st.markdown(f"""<div class="{card_class}"><div style="color:#555;">{title_text}</div><div style="font-size:30px;color:#1565C0;font-weight:bold;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
             sab = get_audio_bytes(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
             if sab: st.audio(sab, format='audio/mp3')
@@ -502,7 +558,7 @@ def main():
             else:
                 if st.session_state.spell_correct: st.success(f"🎉 拼對了！ {sq['Word']}"); st.balloons()
                 else: st.error(f"❌ 拼錯了... 正確是：{sq['Word']}")
-                if st.button("➡️ 下一題拼寫", type="primary"): next_spelling(filtered_df); st.rerun()
+                if st.button("➡️ 下一題拼寫", type="primary"): next_spelling(target_spell_df); st.rerun()
 
 if __name__ == "__main__":
     main()
