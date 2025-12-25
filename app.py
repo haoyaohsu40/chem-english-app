@@ -14,28 +14,31 @@ import uuid
 import random
 
 # ==========================================
-# 1. 頁面設定與 CSS 樣式 (UI 精緻化)
+# 1. 頁面設定與 CSS 樣式 (極致美化版)
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (家庭版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (備考衝刺版)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
-    /* 全局字體設定 */
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     
-    /* 1. 隱藏右上角選單 */
+    /* 1. 隱藏預設選單 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* 2. 標題美化 (置中 + 漸層色) */
+    /* 2. 標題區塊美化 */
     .title-container {
         text-align: center;
-        padding: 10px 0 30px 0;
+        padding: 20px 0 40px 0;
+        background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+        border-radius: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
     .main-title {
-        font-size: 48px;
+        font-size: 42px;
         font-weight: 900;
-        background: -webkit-linear-gradient(45deg, #1a237e, #0288d1);
+        background: -webkit-linear-gradient(45deg, #1565C0, #42A5F5);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin: 0;
@@ -43,73 +46,50 @@ st.markdown("""
         font-family: 'Arial Black', sans-serif;
     }
     .sub-title {
-        font-size: 18px;
-        color: #666;
-        margin-top: 5px;
-        font-weight: bold;
+        font-size: 16px;
+        color: #78909c;
+        margin-top: 8px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
     }
 
-    /* 3. 字體放大專區 */
-    .stRadio label p, .stCheckbox label p { font-size: 20px !important; }
-    .stSelectbox label p { font-size: 20px !important; font-weight: bold; }
-    div[data-baseweb="select"] div { font-size: 18px !important; }
-    .stTextInput label p, .stTextArea label p { font-size: 18px !important; }
-    .stMarkdown p { font-size: 18px; }
+    /* 3. 數據卡片 */
+    .metric-card {
+        background: #ffffff;
+        border-left: 6px solid #4CAF50;
+        border-radius: 12px;
+        padding: 15px 10px;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        margin-bottom: 10px;
+        transition: transform 0.2s;
+    }
+    .metric-card:hover { transform: translateY(-3px); }
+    .metric-label { font-size: 16px; color: #546e7a; font-weight: bold; margin-bottom: 4px; }
+    .metric-value { font-size: 36px; font-weight: 800; color: #2e7d32; }
 
     /* 4. 按鈕優化 */
     .stButton>button { 
-        border-radius: 12px; 
-        font-weight: bold; 
-        border: none;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        transition: all 0.2s;
-        font-size: 18px !important; 
-        padding: 10px 24px;
-        height: auto;
+        border-radius: 12px; font-weight: bold; border: none;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.08); transition: all 0.2s;
+        font-size: 18px !important; padding: 12px 20px; height: auto;
     }
-    .stButton>button:hover { 
-        transform: translateY(-2px); 
-        box-shadow: 0 6px 12px rgba(0,0,0,0.2); 
-    }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
 
-    /* 5. 數據卡片 (Metric Card) 縮小與精緻化 */
-    .metric-card {
-        background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%);
-        border-left: 5px solid #4CAF50; /* 左側綠色線條裝飾 */
-        border-radius: 12px;
-        padding: 15px; /* 減少內距，讓卡片變小 */
-        text-align: center;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.08);
-        margin-bottom: 15px;
-    }
-    .metric-label { 
-        font-size: 18px; /* 字體稍微縮小適配 */
-        color: #555; 
-        margin-bottom: 5px; 
-        font-weight: bold;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    .metric-value { 
-        font-size: 42px; /* 數字適度縮小 */
-        font-weight: 800; 
-        color: #2E7D32; 
-        line-height: 1.1;
-    }
+    /* 5. 字體放大區 */
+    .stRadio label p, .stCheckbox label p, .stSelectbox label p, .stTextInput label p { font-size: 18px !important; }
+    .stMarkdown p { font-size: 18px; }
 
-    /* 6. 單字顯示區優化 */
+    /* 6. 卡片樣式 */
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
-
-    /* 7. 測驗卡片優化 */
+    
     .quiz-card {
         background-color: #fff8e1; padding: 40px; border-radius: 20px;
         text-align: center; border: 4px dashed #ffb74d; margin-bottom: 20px;
     }
-    .quiz-word { font-size: 60px; color: #333; font-weight: bold; margin: 15px 0; }
-    
-    .mistake-mode { border: 4px solid #f44336 !important; background-color: #ffebee !important; }
+    .mistake-mode { border: 4px solid #ef5350 !important; background-color: #ffebee !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -150,9 +130,7 @@ def is_contains_chinese(string):
     return False
 
 def check_duplicate(df, notebook, word):
-    """檢查單字是否已存在於該筆記本 (不分大小寫)"""
     if df.empty: return False
-    # 篩選該筆記本 -> 轉小寫比對 -> 檢查是否為空
     mask = (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
     return not df[mask].empty
 
@@ -312,7 +290,7 @@ def main():
     initialize_session_state()
     df = st.session_state.df
 
-    # 1. 標題區 (置中美化 + Emoji)
+    # 1. 標題區
     st.markdown("""
         <div class="title-container">
             <h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1>
@@ -320,7 +298,7 @@ def main():
         </div>
     """, unsafe_allow_html=True)
 
-    # 2. 數據卡片 (縮小精緻版)
+    # 2. 數據卡片
     notebooks = df['Notebook'].unique().tolist()
     if "🔥 錯題本 (Auto)" not in notebooks: notebooks.append("🔥 錯題本 (Auto)")
     
@@ -336,7 +314,7 @@ def main():
     with c_m2:
         st.markdown(f"""<div class="metric-card"><div class="metric-label">📖 目前本子字數</div><div class="metric-value">{len(filtered_df)}</div></div>""", unsafe_allow_html=True)
 
-    # 3. 側邊欄：新增單字 (含防重複功能)
+    # 3. 側邊欄
     with st.sidebar:
         st.header("📝 新增單字")
         if '預設筆記本' not in notebooks: notebooks.append('預設筆記本')
@@ -444,6 +422,10 @@ def main():
                 else:
                     df = df[df['Notebook'] != del_target]
                     st.session_state.df = df; save_to_google_sheet(df); st.success("已刪除"); st.rerun()
+        
+        # 這裡加回版本號
+        st.markdown("---")
+        st.caption("版本: v31.0 (Spelling Feedback)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -467,7 +449,7 @@ def main():
                         st.download_button("⬇️ 下載 MP3", mp3, f"Audio_{current_nb}.mp3", "audio/mp3", use_container_width=True)
             else: st.button("🎵 設定順序後下載", disabled=True, use_container_width=True)
 
-    # 5. 導航按鈕區
+    # 5. 導航按鈕
     st.markdown("###")
     n1, n2, n3, n4, n5 = st.columns(5)
     def btn_type(mode_name): return "primary" if st.session_state.current_mode == mode_name else "secondary"
@@ -480,7 +462,7 @@ def main():
     
     st.divider()
 
-    # 6. 內容顯示區
+    # 6. 內容區
     mode = st.session_state.current_mode
 
     if mode == 'list':
@@ -550,7 +532,6 @@ def main():
         else:
             if st.session_state.quiz_current is None or st.session_state.quiz_current['Word'] not in target_df['Word'].values:
                 next_question(target_df); st.rerun()
-            
             q = st.session_state.quiz_current
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
@@ -584,7 +565,7 @@ def main():
             
             sq = st.session_state.spell_current
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
-            st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:15px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
             sab = get_audio_bytes(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
             if sab: st.audio(sab, format='audio/mp3')
@@ -595,7 +576,10 @@ def main():
                     st.session_state.spell_input = inp; check_spelling(); st.rerun()
             else:
                 if st.session_state.spell_correct: st.success(f"🎉 拼對了！ {sq['Word']}"); st.balloons()
-                else: st.error(f"❌ 拼錯了... 正確是：{sq['Word']}")
+                else: 
+                    # 這裡加入了詳細的錯誤反饋
+                    st.error(f"❌ 拼錯了...\n\n您的輸入：**{st.session_state.spell_input}**\n\n正確答案：**{sq['Word']}**")
+                
                 if st.button("➡️ 下一題", type="primary"): next_spelling(target_df); st.rerun()
 
 if __name__ == "__main__":
