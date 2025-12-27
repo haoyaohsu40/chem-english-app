@@ -18,7 +18,7 @@ OCR_AVAILABLE = False
 try:
     from PIL import Image, ImageEnhance, ImageFilter, ImageOps
     import pytesseract
-    from pytesseract import Output
+    from pytesseract import Output # 引入 Output 以獲取信心度數據
     OCR_AVAILABLE = True
 except ImportError:
     print("OCR 套件未安裝。")
@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (v35.3)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (v35.4)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -160,32 +160,65 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- v35.2 核心：雙語混合 OCR 引擎 ---
-def smart_ocr_process(image):
+# --- v35.4 核心：三道防線 OCR 引擎 ---
+def smart_ocr_process_v4(image):
     """
-    使用 中文+英文 雙語辨識模式，避免將中文誤判為英文亂碼。
-    然後用 Regex 提取出純英文單字。
+    1. 影像增強
+    2. 使用 image_to_data 獲取詳細信心度
+    3. 防線一：信心度過濾 (Conf > 50)
+    4. 防線二：結構清洗 (去除標點、確認純字母)
+    5. 防線三：字典驗證 (利用 IPA 庫檢查是否為真實單字)
     """
     # 1. 影像前處理
-    img = image.convert('L') # 轉灰階
+    img = image.convert('L')
     enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.0) # 提高對比
-    # 稍微放大影像，對小字有幫助
+    img = enhancer.enhance(2.0)
     width, height = img.size
-    img = img.resize((width*2, height*2), Image.Resampling.LANCZOS)
-    
-    # 2. 執行 OCR
-    custom_config = r'--oem 3 --psm 6' 
+    # 適度放大，太大会降低效能
+    img = img.resize((int(width*1.5), int(height*1.5)), Image.Resampling.LANCZOS)
+
+    # 2. 獲取詳細數據 (包含信心度 conf)
+    custom_config = r'--oem 3 --psm 6'
     try:
-        text = pytesseract.image_to_string(img, lang='chi_tra+eng', config=custom_config)
+        # 嘗試使用雙語模式
+        data = pytesseract.image_to_data(img, lang='chi_tra+eng', config=custom_config, output_type=Output.DICT)
     except pytesseract.TesseractError:
-        text = pytesseract.image_to_string(img, lang='eng', config=custom_config)
-    
-    # 3. 提取英文單字 (長度 >= 3 的連續英文字母)
-    words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-    valid_words = sorted(list(set(words)))
-                
-    return valid_words, text 
+        # 降級回英文模式
+        data = pytesseract.image_to_data(img, lang='eng', config=custom_config, output_type=Output.DICT)
+
+    valid_words = set()
+    n_boxes = len(data['text'])
+    raw_text_accumulator = []
+
+    for i in range(n_boxes):
+        text = data['text'][i]
+        # 確保信心度存在且為數字
+        try:
+            conf = int(float(data['conf'][i]))
+        except (ValueError, TypeError):
+            conf = 0
+            
+        if text.strip():
+            raw_text_accumulator.append(text)
+
+        # --- 防線二：結構清洗 ---
+        # 去除頭尾標點符號 (例如 "(DataFrame)" 變成 "DataFrame")
+        clean_word = re.sub(r'^[^\w]+|[^\w]+$', '', text).strip()
+
+        # --- 防線一 & 二：信心度與基本結構檢查 ---
+        # 條件：信心度 > 50, 長度 >= 3, 且只包含英文字母(不含數字或中文雜訊)
+        if conf > 50 and len(clean_word) >= 3 and re.match(r'^[a-zA-Z]+$', clean_word):
+             # --- 防線三：字典驗證 (殺手鐧) ---
+             # 利用 eng_to_ipa 檢查。如果回傳的發音結尾沒有星號，表示在庫裡找到了這個字。
+             # 這能有效過濾掉像 "PoP" 這種 AI 幻覺出來的假字。
+             ipa_result = eng_to_ipa.convert(clean_word)
+             if not ipa_result.endswith('*'):
+                 valid_words.add(clean_word)
+
+    # 重新組裝原始文字供參考
+    raw_text_display = " ".join(raw_text_accumulator)
+
+    return sorted(list(valid_words)), raw_text_display
 
 # --- 語音功能 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
@@ -500,20 +533,21 @@ def main_app():
                     image = Image.open(uploaded_file)
                     st.image(image, caption='預覽', use_column_width=True)
                     
-                    if st.button("🔍 智能辨識 (中英混合模式)"):
-                        with st.spinner("🤖 正在處理中..."):
-                            valid_words, raw_text = smart_ocr_process(image)
+                    if st.button("🔍 智能辨識 (強力過濾模式)"):
+                        with st.spinner("🤖 正在進行三道防線過濾..."):
+                            # 使用新的 v35.4 強力過濾 OCR 函數
+                            valid_words, raw_text = smart_ocr_process_v4(image)
                             
                             # 將結果轉成字串，並存入 session state (key='ocr_editor')
                             result_text = ", ".join(valid_words)
                             st.session_state.ocr_editor = result_text
                             
                             if valid_words:
-                                st.success(f"🎉 成功捕捉到單字！請在下方編輯框確認。")
+                                st.success(f"🎉 成功捕捉到 {len(valid_words)} 個可信單字！請在下方確認。")
                             else:
-                                st.warning("😔 沒抓到英文單字。")
+                                st.warning("😔 經過強力過濾後，沒有發現可信的英文單字。")
                                 
-                            with st.expander("查看原始辨識文字 (除錯用)"):
+                            with st.expander("查看未過濾的原始資料 (除錯用)"):
                                 st.text(raw_text)
                 except Exception as e:
                     st.error(f"錯誤: {e}")
@@ -521,7 +555,7 @@ def main_app():
             # --- 顯示可編輯的文字框 ---
             # 這裡的 value 直接綁定 session_state，讓按鈕可以讀到最新的編輯內容
             final_text_input = st.text_area(
-                "📝 辨識結果 (可編輯：刪除不需要的字)", 
+                "📝 辨識結果 (請刪除不需要的字，確認後再加入)", 
                 key="ocr_editor", 
                 height=150
             )
@@ -530,13 +564,13 @@ def main_app():
             if final_text_input:
                 st.write("---")
                 # 計算大概有多少個單字 (用逗號分隔)
-                est_count = len([w for w in final_text_input.split(',') if w.strip()])
+                words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text_input) if w.strip()]
+                est_count = len(words_to_add)
                 st.write(f"準備將約 **{est_count}** 個單字加入 **{target_nb}**")
                 
                 if st.button("🚀 確認加入 (以編輯框內容為準)", type="primary"):
-                    # 直接讀取 final_text_input (即使用者編輯過的內容)
-                    # 分割字串：支援逗號、換行
-                    words_to_add = re.split(r'[,\n]', final_text_input)
+                    # 分割字串：支援逗號、換行、空格
+                    words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text_input) if w.strip()]
                     
                     new_entries = []
                     skipped = 0
@@ -544,9 +578,11 @@ def main_app():
                     total = len(words_to_add)
                     
                     for i, w in enumerate(words_to_add):
-                        w = w.strip()
                         if not w: continue # 跳過空字串
                         
+                        # 最後一道檢查：確保是純英文 (避免手滑輸入中文)
+                        if not re.match(r'^[a-zA-Z]+$', w): continue
+
                         if check_duplicate(df, current_user, target_nb, w):
                             skipped += 1
                         else:
@@ -574,7 +610,7 @@ def main_app():
                     elif skipped > 0:
                         st.warning("⚠️ 所有單字都重複了！")
                     else:
-                        st.warning("⚠️ 沒有有效的單字可加入。")
+                        st.warning("⚠️ 沒有有效的英文單字可加入。")
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
@@ -617,7 +653,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v35.3 (Editable OCR Results)")
+        st.caption("版本: v35.4 (Tough Filter + Dict Check)")
 
     # 4. 主畫面控制區
     st.divider()
