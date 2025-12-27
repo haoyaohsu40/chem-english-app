@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.3"
+VERSION = "v37.4"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -92,10 +92,31 @@ st.markdown("""
         text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
     }
     
+    /* 登入畫面樣式優化 */
     .login-container {
-        background-color: white; padding: 40px; border-radius: 20px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;
-        max-width: 500px; margin: 50px auto; border-top: 10px solid #4CAF50;
+        background-color: white; 
+        padding: 60px; /* 增加內距 */
+        border-radius: 25px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+        text-align: center;
+        max-width: 800px; /* 加寬容器 */
+        margin: 50px auto; 
+        border-top: 12px solid #4CAF50;
+    }
+    
+    .welcome-text {
+        font-size: 28px; /* 加大歡迎詞 */
+        color: #666; 
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
+    
+    .login-title {
+        color: #2E7D32; 
+        margin-top: 0;
+        font-size: 48px; /* 加大標題 */
+        font-weight: 900;
+        white-space: nowrap; /* 強制不換行 */
     }
 
     div[data-testid="stCameraInput"] video {
@@ -271,7 +292,6 @@ def add_to_mistake_notebook(row, user):
     df = st.session_state.df
     mistake_nb_name = "🔥 錯題本 (Auto)"
     if not check_duplicate(df, user, mistake_nb_name, row['Word']):
-        # 修正：確保密碼正確繼承
         user_rows = df[df['User'] == user]
         user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
         
@@ -420,11 +440,12 @@ def check_spelling():
 # ==========================================
 
 def login_page():
+    # 優化後的 HTML 結構
     st.markdown("""
         <div class="login-container">
-            <p style="font-size: 20px; color: #555; margin-bottom: 5px;">歡迎來到</p>
-            <h1 style="color: #2E7D32; margin-top: 0;">🚀 AI 智能單字速記通 🎓</h1>
-            <p style="color: #666; font-size: 18px;">請輸入您的帳號與密碼</p>
+            <div class="welcome-text">歡迎來到</div>
+            <h1 class="login-title">🚀 AI 智能單字速記通 🎓</h1>
+            <p style="color: #666; font-size: 18px; margin-top: 20px;">請輸入您的帳號與密碼</p>
         </div>
     """, unsafe_allow_html=True)
     
@@ -712,7 +733,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption(f"版本: {VERSION} (Password UI + Version)")
+        st.caption(f"版本: {VERSION} (UI Polished)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -824,7 +845,6 @@ def main_app():
                 next_question(target_df); st.rerun()
             q = st.session_state.quiz_current
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
-            
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
