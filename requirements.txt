@@ -6,4 +6,6 @@ eng_to_ipa
 gspread
 oauth2client
 openpyxl
+Pillow
+pytesseract
 
