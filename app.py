@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v38.0 (Lite)"
+VERSION = "v38.1 (Lite + Audio Fix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -89,30 +89,12 @@ st.markdown("""
     
     /* 登入畫面樣式優化 */
     .login-container {
-        background-color: white; 
-        padding: 60px; 
-        border-radius: 25px;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
-        text-align: center;
-        max-width: 800px; 
-        margin: 50px auto; 
-        border-top: 12px solid #4CAF50;
+        background-color: white; padding: 60px; border-radius: 25px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1); text-align: center;
+        max-width: 800px; margin: 50px auto; border-top: 12px solid #4CAF50;
     }
-    
-    .welcome-text {
-        font-size: 28px; 
-        color: #666; 
-        margin-bottom: 10px;
-        font-weight: bold;
-    }
-    
-    .login-title {
-        color: #2E7D32; 
-        margin-top: 0;
-        font-size: 48px; 
-        font-weight: 900;
-        white-space: nowrap; 
-    }
+    .welcome-text { font-size: 28px; color: #666; margin-bottom: 10px; font-weight: bold; }
+    .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; white-space: nowrap; }
     
     .version-tag {
         position: fixed; bottom: 10px; left: 15px;
@@ -195,19 +177,6 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- 語音功能 ---
-def text_to_speech_visible(text, lang='en', tld='com', slow=False):
-    try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
-        if not clean_text: return ""
-        tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
-        fp = BytesIO()
-        tts.write_to_fp(fp)
-        b64 = base64.b64encode(fp.getvalue()).decode()
-        unique_id = f"audio_vis_{uuid.uuid4()}" 
-        return f"""<audio id="{unique_id}" controls style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-    except: return ""
-
 def get_audio_bytes(text, lang='en', tld='com', slow=False):
     try:
         clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
@@ -217,18 +186,6 @@ def get_audio_bytes(text, lang='en', tld='com', slow=False):
         tts.write_to_fp(fp)
         return fp
     except: return None
-
-def text_to_speech_autoplay_hidden(text, lang='en', tld='com', slow=False):
-    try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
-        if not clean_text: return ""
-        tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
-        fp = BytesIO()
-        tts.write_to_fp(fp)
-        b64 = base64.b64encode(fp.getvalue()).decode()
-        unique_id = f"audio_hide_{uuid.uuid4()}"
-        return f"""<audio autoplay style="display:none;" id="{unique_id}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-    except: return ""
 
 def generate_custom_audio(df, sequence, tld='com', slow=False):
     full_text = ""
@@ -506,8 +463,11 @@ def main_app():
                         try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
                         except: st.error("翻譯失敗")
             with c2:
+                # 修正：直接播放，不使用 HTML
                 if st.button("🔊 試聽", use_container_width=True):
-                    if w_in: st.markdown(text_to_speech_visible(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow), unsafe_allow_html=True)
+                    if w_in:
+                        ab = get_audio_bytes(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
+                        if ab: st.audio(ab, format='audio/mp3', autoplay=True)
             
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
@@ -663,7 +623,10 @@ def main_app():
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
-                    if st.button("🔊", key=f"p{i}"): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
+                    # 修正：按鈕觸發後直接顯示播放器並自動播放
+                    if st.button("🔊", key=f"p{i}"):
+                        ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
+                        if ab: st.audio(ab, format='audio/mp3', autoplay=True)
                 with c4:
                     # 雙按鈕設計
                     g_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
@@ -700,7 +663,10 @@ def main_app():
                 with b1: 
                     if st.button("👀 看中文", use_container_width=True): st.info(f"{row['Chinese']}")
                 with b2: 
-                    if st.button("🔊 聽發音", use_container_width=True): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
+                    # 修正：卡片模式也改用原生播放器
+                    if st.button("🔊 聽發音", use_container_width=True): 
+                        ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
+                        if ab: st.audio(ab, format='audio/mp3', autoplay=True)
         else: st.info("無單字")
 
     elif mode == 'slide':
@@ -711,12 +677,39 @@ def main_app():
             else:
                 for _, row in filtered_df.iloc[::-1].iterrows():
                     for step in st.session_state.play_order:
-                        ph.empty(); time.sleep(0.1)
-                        html = f"""<div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:24px;">{row['IPA']}</div>"""
-                        if step == "英文": html += f"""<div style="color:#aaa;">Listening...</div>{text_to_speech_autoplay_hidden(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)}"""
-                        elif step == "中文": html += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>{text_to_speech_autoplay_hidden(row['Chinese'], 'zh-TW', slow=st.session_state.is_slow)}"""
-                        html += "</div>"
-                        ph.markdown(html, unsafe_allow_html=True); time.sleep(delay)
+                        # 修正：輪播使用原生 st.audio
+                        text = ""
+                        lang = 'en'
+                        tld = st.session_state.accent_tld
+                        
+                        if step == "英文":
+                            text = row['Word']
+                            lang = 'en'
+                        elif step == "中文":
+                            text = row['Chinese']
+                            lang = 'zh-TW'
+                            tld = 'com'
+                        
+                        audio_data = get_audio_bytes(text, lang, tld, st.session_state.is_slow)
+                        
+                        with ph.container():
+                            html_content = f"""
+                                <div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;margin-bottom:10px;">
+                                    <div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div>
+                                    <div style="color:#666;font-size:24px;margin-bottom:20px;">{row['IPA']}</div>
+                            """
+                            if step == "中文":
+                                html_content += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>"""
+                            elif step == "英文":
+                                html_content += f"""<div style="color:#aaa;">Listening...</div>"""
+                            
+                            html_content += "</div>"
+                            st.markdown(html_content, unsafe_allow_html=True)
+                            
+                            if audio_data:
+                                st.audio(audio_data, format='audio/mp3', start_time=0, autoplay=True)
+                        
+                        time.sleep(delay)
                 ph.success("輪播結束")
 
     elif mode == 'quiz':
@@ -735,10 +728,12 @@ def main_app():
                 next_question(target_df); st.rerun()
             q = st.session_state.quiz_current
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
+            
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
+            # 修正：測驗模式自動播放
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
-            if ab: st.audio(ab, format='audio/mp3')
+            if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
@@ -768,8 +763,9 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
+            # 修正：拼字模式自動播放
             sab = get_audio_bytes(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
-            if sab: st.audio(sab, format='audio/mp3')
+            if sab: st.audio(sab, format='audio/mp3', autoplay=True)
 
             if not st.session_state.spell_checked:
                 inp = st.text_input("輸入單字", key="spin")
