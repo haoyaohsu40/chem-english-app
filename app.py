@@ -18,15 +18,15 @@ OCR_AVAILABLE = False
 try:
     from PIL import Image, ImageEnhance, ImageFilter, ImageOps
     import pytesseract
-    from pytesseract import Output # 引入 Output 以獲取信心度數據
+    from pytesseract import Output
     OCR_AVAILABLE = True
 except ImportError:
-    print("OCR 套件未安裝。")
+    pass
 
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (v35.4)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (v35.5)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -142,11 +142,6 @@ def save_to_google_sheet(df):
     except Exception as e:
         st.error(f"儲存失敗：{e}")
 
-def is_contains_chinese(string):
-    for char in str(string):
-        if '\u4e00' <= char <= '\u9fff': return True
-    return False
-
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
     target_user = str(user).strip()
@@ -160,67 +155,66 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- v35.4 核心：三道防線 OCR 引擎 ---
-def smart_ocr_process_v4(image):
+# --- v35.5 核心：超嚴格過濾 OCR 引擎 ---
+def smart_ocr_process_v5(image):
     """
     1. 影像增強
-    2. 使用 image_to_data 獲取詳細信心度
-    3. 防線一：信心度過濾 (Conf > 50)
-    4. 防線二：結構清洗 (去除標點、確認純字母)
-    5. 防線三：字典驗證 (利用 IPA 庫檢查是否為真實單字)
+    2. OCR 辨識 (雙語/英文降級)
+    3. 嚴格過濾：
+       - 必須 > 3 個字母
+       - 禁止全大寫 (除非是特定白名單)
+       - 必須通過 IPA 字典檢查 OR 在白名單內
     """
     # 1. 影像前處理
     img = image.convert('L')
     enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.0)
-    width, height = img.size
-    # 適度放大，太大会降低效能
-    img = img.resize((int(width*1.5), int(height*1.5)), Image.Resampling.LANCZOS)
-
-    # 2. 獲取詳細數據 (包含信心度 conf)
+    img = enhancer.enhance(2.5) # 提高對比
+    # 讓背景更乾淨
+    img = ImageOps.autocontrast(img) 
+    
+    # 2. 獲取詳細數據
     custom_config = r'--oem 3 --psm 6'
     try:
-        # 嘗試使用雙語模式
         data = pytesseract.image_to_data(img, lang='chi_tra+eng', config=custom_config, output_type=Output.DICT)
     except pytesseract.TesseractError:
-        # 降級回英文模式
         data = pytesseract.image_to_data(img, lang='eng', config=custom_config, output_type=Output.DICT)
 
     valid_words = set()
     n_boxes = len(data['text'])
     raw_text_accumulator = []
+    
+    # 專有名詞白名單 (即使查不到字典也要保留)
+    whitelist = {'dataframe', 'pandas', 'series', 'python', 'import', 'print', 'list', 'dict', 'tuple', 'set'}
 
     for i in range(n_boxes):
         text = data['text'][i]
-        # 確保信心度存在且為數字
         try:
             conf = int(float(data['conf'][i]))
-        except (ValueError, TypeError):
+        except:
             conf = 0
             
         if text.strip():
             raw_text_accumulator.append(text)
 
-        # --- 防線二：結構清洗 ---
-        # 去除頭尾標點符號 (例如 "(DataFrame)" 變成 "DataFrame")
-        clean_word = re.sub(r'^[^\w]+|[^\w]+$', '', text).strip()
+        # 清洗單字：去除標點
+        clean_word = re.sub(r'^[^a-zA-Z]+|[^a-zA-Z]+$', '', text).strip()
+        
+        # --- 嚴格過濾邏輯 ---
+        # 1. 信心度 > 50
+        # 2. 長度 > 2
+        # 3. 必須是純英文字母
+        if conf > 50 and len(clean_word) > 2 and re.match(r'^[a-zA-Z]+$', clean_word):
+            
+            # 4. 排除全大寫亂碼 (如 BARR, ABA)，除非它在白名單
+            if clean_word.isupper() and clean_word.lower() not in whitelist:
+                continue
+                
+            # 5. 字典驗證：有 IPA 發音 OR 在白名單
+            ipa_result = eng_to_ipa.convert(clean_word)
+            if not ipa_result.endswith('*') or clean_word.lower() in whitelist:
+                valid_words.add(clean_word)
 
-        # --- 防線一 & 二：信心度與基本結構檢查 ---
-        # 條件：信心度 > 50, 長度 >= 3, 且只包含英文字母(不含數字或中文雜訊)
-        if conf > 50 and len(clean_word) >= 3 and re.match(r'^[a-zA-Z]+$', clean_word):
-             # --- 防線三：字典驗證 (殺手鐧) ---
-             # 利用 eng_to_ipa 檢查。如果回傳的發音結尾沒有星號，表示在庫裡找到了這個字。
-             # 或者，如果它是首字大寫 (Proper Noun) 像 DataFrame/Pandas，也放行。
-             ipa_result = eng_to_ipa.convert(clean_word)
-             
-             # 邏輯：(有發音) OR (首字大寫且長度>3 - 保留專有名詞)
-             if not ipa_result.endswith('*') or (clean_word[0].isupper() and len(clean_word) > 3):
-                 valid_words.add(clean_word)
-
-    # 重新組裝原始文字供參考
-    raw_text_display = " ".join(raw_text_accumulator)
-
-    return sorted(list(valid_words)), raw_text_display
+    return sorted(list(valid_words), key=str.lower), " ".join(raw_text_accumulator)
 
 # --- 語音功能 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
@@ -318,8 +312,61 @@ def initialize_session_state():
     if 'spell_score' not in st.session_state: st.session_state.spell_score = 0
     if 'spell_total' not in st.session_state: st.session_state.spell_total = 0
     
-    # 這裡確保有一個編輯框的狀態
+    # 狀態管理：OCR 編輯框
     if 'ocr_editor' not in st.session_state: st.session_state.ocr_editor = ""
+    # 狀態管理：操作訊息回饋
+    if 'msg_success' not in st.session_state: st.session_state.msg_success = ""
+    if 'msg_warning' not in st.session_state: st.session_state.msg_warning = ""
+
+# --- 🚀 關鍵修復：Callback 函式 (解決崩潰問題) ---
+def add_words_callback():
+    """
+    透過 Callback 處理新增單字，避免直接在按鈕邏輯中修改 Widget State 導致的崩潰。
+    """
+    final_text = st.session_state.ocr_editor
+    target_nb = st.session_state.target_nb_key # 需要在 widget 中設定 key
+    current_user = str(st.session_state.current_user).strip()
+    
+    # 分割字串
+    words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text) if w.strip()]
+    
+    new_entries = []
+    skipped = 0
+    
+    # 取得目前的 DataFrame
+    df = st.session_state.df
+    
+    for w in words_to_add:
+        if not w or not re.match(r'^[a-zA-Z]+$', w): continue
+        
+        if check_duplicate(df, current_user, target_nb, w):
+            skipped += 1
+        else:
+            try:
+                ipa = f"[{eng_to_ipa.convert(w)}]"
+                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
+                new_entries.append({
+                    'User': current_user,
+                    'Notebook': target_nb, 
+                    'Word': w, 
+                    'IPA': ipa, 
+                    'Chinese': trans, 
+                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                })
+            except: pass
+            
+    if new_entries:
+        df_all = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
+        st.session_state.df = df_all
+        save_to_google_sheet(df_all)
+        
+        # 設定成功訊息，並清空編輯框
+        st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！(重複略過 {skipped} 筆)"
+        st.session_state.ocr_editor = "" # 這裡可以安全清空，因為是在 Callback 中
+    elif skipped > 0:
+        st.session_state.msg_warning = "⚠️ 所有單字都重複了！"
+    else:
+        st.session_state.msg_warning = "⚠️ 沒有有效的英文單字可加入。"
 
 # --- 測驗邏輯 ---
 def next_question(df):
@@ -402,6 +449,14 @@ def login_page():
                 st.error("請輸入名稱")
 
 def main_app():
+    # 顯示 Callback 訊息 (如果有)
+    if st.session_state.msg_success:
+        st.success(st.session_state.msg_success)
+        st.session_state.msg_success = "" # 顯示後清除
+    if st.session_state.msg_warning:
+        st.warning(st.session_state.msg_warning)
+        st.session_state.msg_warning = ""
+
     df_all = st.session_state.df
     current_user = str(st.session_state.current_user).strip()
     
@@ -443,7 +498,8 @@ def main_app():
         if '預設筆記本' not in notebooks: notebooks.append('預設筆記本')
         
         nb_mode = st.radio("筆記本來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed")
-        target_nb = st.selectbox("選擇筆記本", notebooks) if nb_mode == "選擇現有" else st.text_input("輸入新筆記本名稱", "我的單字本")
+        # 注意：這裡加上 key，讓 callback 可以讀取
+        target_nb = st.selectbox("選擇筆記本", notebooks, key="target_nb_key") if nb_mode == "選擇現有" else st.text_input("輸入新筆記本名稱", "我的單字本", key="target_nb_key")
 
         st.divider()
         
@@ -535,84 +591,40 @@ def main_app():
                     image = Image.open(uploaded_file)
                     st.image(image, caption='預覽', use_column_width=True)
                     
-                    if st.button("🔍 智能辨識 (強力過濾模式)"):
-                        with st.spinner("🤖 正在進行三道防線過濾..."):
-                            # 使用新的 v35.4 強力過濾 OCR 函數
-                            valid_words, raw_text = smart_ocr_process_v4(image)
+                    if st.button("🔍 智能辨識 (v5 嚴格模式)"):
+                        with st.spinner("🤖 正在過濾雜訊、檢查字典..."):
+                            # 使用 v5 引擎 (內建白名單與 IPA 檢查)
+                            valid_words, raw_text = smart_ocr_process_v5(image)
                             
-                            # 將結果轉成字串，並存入 session state (key='ocr_editor')
                             result_text = ", ".join(valid_words)
                             st.session_state.ocr_editor = result_text
                             
                             if valid_words:
-                                st.success(f"🎉 成功捕捉到 {len(valid_words)} 個可信單字！請在下方確認。")
+                                st.success(f"🎉 成功捕捉到 {len(valid_words)} 個單字！")
                             else:
-                                st.warning("😔 經過強力過濾後，沒有發現可信的英文單字。")
+                                st.warning("😔 經過嚴格過濾後，沒有發現有效的英文單字。")
                                 
-                            with st.expander("查看未過濾的原始資料 (除錯用)"):
+                            with st.expander("查看原始資料 (除錯用)"):
                                 st.text(raw_text)
                 except Exception as e:
                     st.error(f"錯誤: {e}")
             
-            # --- 顯示可編輯的文字框 ---
-            # 這裡的 value 直接綁定 session_state，讓按鈕可以讀到最新的編輯內容
-            final_text_input = st.text_area(
-                "📝 辨識結果 (請刪除不需要的字，確認後再加入)", 
+            # --- 編輯框 ---
+            st.text_area(
+                "📝 辨識結果 (請刪除不需要的字)", 
                 key="ocr_editor", 
                 height=150
             )
             
-            # 只有當編輯框有內容時，才顯示加入按鈕
-            if final_text_input:
+            # 這裡我們只顯示按鈕，實際邏輯交給 callback
+            if st.session_state.ocr_editor:
                 st.write("---")
-                # 計算大概有多少個單字 (用逗號分隔)
-                words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text_input) if w.strip()]
-                est_count = len(words_to_add)
-                st.write(f"準備將約 **{est_count}** 個單字加入 **{target_nb}**")
+                # 計算數量顯示給使用者看
+                count = len([w for w in re.split(r'[,\n ]', st.session_state.ocr_editor) if w.strip()])
+                st.write(f"準備將約 **{count}** 個單字加入 **{st.session_state.target_nb_key}**")
                 
-                if st.button("🚀 確認加入 (以編輯框內容為準)", type="primary"):
-                    # 分割字串：支援逗號、換行、空格
-                    words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text_input) if w.strip()]
-                    
-                    new_entries = []
-                    skipped = 0
-                    bar = st.progress(0)
-                    total = len(words_to_add)
-                    
-                    for i, w in enumerate(words_to_add):
-                        if not w: continue # 跳過空字串
-                        
-                        # 最後一道檢查：確保是純英文 (避免手滑輸入中文)
-                        if not re.match(r'^[a-zA-Z]+$', w): continue
-
-                        if check_duplicate(df, current_user, target_nb, w):
-                            skipped += 1
-                        else:
-                            try:
-                                ipa = f"[{eng_to_ipa.convert(w)}]"
-                                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                                new_entries.append({
-                                    'User': current_user,
-                                    'Notebook': target_nb, 
-                                    'Word': w, 
-                                    'IPA': ipa, 
-                                    'Chinese': trans, 
-                                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
-                                })
-                            except: pass
-                        if total > 0: bar.progress((i+1)/total)
-                    
-                    if new_entries:
-                        df_all = pd.concat([df_all, pd.DataFrame(new_entries)], ignore_index=True)
-                        st.session_state.df = df_all
-                        save_to_google_sheet(df_all)
-                        st.success(f"✅ 成功加入 {len(new_entries)} 筆 (跳過 {skipped} 筆重複)")
-                        st.session_state.ocr_editor = "" # 清空編輯框
-                        time.sleep(2); st.rerun()
-                    elif skipped > 0:
-                        st.warning("⚠️ 所有單字都重複了！")
-                    else:
-                        st.warning("⚠️ 沒有有效的英文單字可加入。")
+                # 關鍵修正：使用 on_click 呼叫 callback
+                st.button("🚀 確認加入", type="primary", on_click=add_words_callback)
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
@@ -655,7 +667,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v35.4 (Tough Filter + Dict Check)")
+        st.caption("版本: v35.5 (Fix Crash + Strict Filter)")
 
     # 4. 主畫面控制區
     st.divider()
