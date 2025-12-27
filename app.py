@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.1"
+VERSION = "v37.2"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -271,7 +271,10 @@ def add_to_mistake_notebook(row, user):
     df = st.session_state.df
     mistake_nb_name = "🔥 錯題本 (Auto)"
     if not check_duplicate(df, user, mistake_nb_name, row['Word']):
-        user_pwd = df[df['User'] == user]['Password'].iloc[0] if not df[df['User'] == user].empty else ""
+        # 修正：確保密碼正確繼承
+        user_rows = df[df['User'] == user]
+        user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
+        
         new_entry = {
             'User': str(user).strip(), 
             'Password': user_pwd,
@@ -428,7 +431,6 @@ def login_page():
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # 修改提示文字
         user_input = st.text_input(
             "學號 / 姓名 / 英文ID (皆可，下次請憑此登入)", 
             placeholder="例如: s12345, 王小明, or Tony", 
@@ -436,13 +438,18 @@ def login_page():
         )
         
         if user_input:
+            # 關鍵修正：檢查該使用者是否有「任何」一筆資料有密碼
+            # 只要有一筆有密碼，就視為老用戶
             user_data = df[df['User'] == user_input.strip()]
             is_new_user = True
             stored_password = ""
             
             if not user_data.empty:
-                stored_password = str(user_data.iloc[0]['Password']).strip()
-                if stored_password:
+                # 過濾出有密碼的列
+                pwd_rows = user_data[user_data['Password'] != ""]
+                if not pwd_rows.empty:
+                    # 抓取第一筆有效的密碼
+                    stored_password = pwd_rows.iloc[0]['Password']
                     is_new_user = False
             
             if is_new_user:
@@ -456,18 +463,24 @@ def login_page():
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
                             
-                            dummy_entry = {
-                                'User': user_input.strip(),
-                                'Password': new_pwd,
-                                'Notebook': '預設筆記本',
-                                'Word': 'Welcome',
-                                'IPA': '',
-                                'Chinese': '歡迎使用',
-                                'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
-                            }
-                            df_new = pd.concat([df, pd.DataFrame([dummy_entry])], ignore_index=True)
-                            st.session_state.df = df_new
-                            save_to_google_sheet(df_new)
+                            # 如果是老用戶但沒設密碼 (轉型期)，把舊資料補上密碼
+                            if not user_data.empty:
+                                df.loc[df['User'] == user_input.strip(), 'Password'] = new_pwd
+                                save_to_google_sheet(df)
+                            else:
+                                # 真‧新用戶，建一筆 dummy data
+                                dummy_entry = {
+                                    'User': user_input.strip(),
+                                    'Password': new_pwd,
+                                    'Notebook': '預設筆記本',
+                                    'Word': 'Welcome',
+                                    'IPA': '',
+                                    'Chinese': '歡迎使用',
+                                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                                }
+                                df_new = pd.concat([df, pd.DataFrame([dummy_entry])], ignore_index=True)
+                                st.session_state.df = df_new
+                                save_to_google_sheet(df_new)
                             
                             st.rerun()
                         else:
@@ -482,6 +495,12 @@ def login_page():
                     if pwd_input == stored_password:
                         st.session_state.current_user = user_input.strip()
                         st.session_state.logged_in = True
+                        
+                        # 自動修復：登入成功後，檢查是否有漏掉密碼的舊資料，幫忙補上
+                        if (user_data['Password'] == "").any():
+                            df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
+                            save_to_google_sheet(df)
+                            
                         st.rerun()
                     else:
                         st.error("密碼錯誤，請再試一次")
@@ -566,7 +585,10 @@ def main_app():
                         st.warning(f"⚠️ 單字 '{w_in}' 已經在 '{target_nb}' 裡面囉！")
                     else:
                         try:
-                            user_pwd = df[df['User'] == current_user].iloc[0]['Password'] if not df[df['User'] == current_user].empty else ""
+                            # 確保抓取到正確的密碼
+                            user_rows = df[df['User'] == current_user]
+                            user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
+                            
                             ipa = f"[{eng_to_ipa.convert(w_in)}]"
                             trans = GoogleTranslator(source='auto', target='zh-TW').translate(w_in)
                             new = {
@@ -590,7 +612,8 @@ def main_app():
                     new_entries = []
                     skipped_count = 0
                     bar = st.progress(0)
-                    user_pwd = df[df['User'] == current_user].iloc[0]['Password'] if not df[df['User'] == current_user].empty else ""
+                    user_rows = df[df['User'] == current_user]
+                    user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
 
                     for i, w in enumerate(words):
                         w = w.strip()
@@ -807,7 +830,6 @@ def main_app():
                 next_question(target_df); st.rerun()
             q = st.session_state.quiz_current
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
-            
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
