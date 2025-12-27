@@ -12,14 +12,13 @@ import time
 import re
 import uuid
 import random
-# 新增：用於圖片處理
-from PIL import Image
-import pytesseract
+# from PIL import Image # 暫時移除以免報錯
+# import pytesseract # 暫時移除以免報錯
 
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (OCR版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (修復版)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -90,7 +89,12 @@ def get_google_sheet_data():
         sheet = client.open("vocab_db").sheet1
         data = sheet.get_all_records()
         if not data: return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
-        return pd.DataFrame(data)
+        
+        df = pd.DataFrame(data)
+        # 關鍵修正：將 User 欄位強制轉為字串，避免數字與文字比對失敗
+        if 'User' in df.columns:
+            df['User'] = df['User'].astype(str)
+        return df
     except Exception as e:
         st.error(f"連線失敗：{e}")
         return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
@@ -103,6 +107,11 @@ def save_to_google_sheet(df):
         client = gspread.authorize(creds)
         sheet = client.open("vocab_db").sheet1
         sheet.clear()
+        
+        # 確保存回去之前，User 也是字串格式
+        if 'User' in df.columns:
+            df['User'] = df['User'].astype(str)
+            
         cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
         for c in cols:
             if c not in df.columns: df[c] = ""
@@ -119,8 +128,8 @@ def is_contains_chinese(string):
 
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
-    # 修正邏輯：同時檢查該用戶和該筆記本
-    mask = (df['User'] == user) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
+    # 這裡也要確保 user 是字串
+    mask = (df['User'] == str(user)) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
     return not df[mask].empty
 
 def to_excel(df):
@@ -185,7 +194,7 @@ def add_to_mistake_notebook(row, user):
     mistake_nb_name = "🔥 錯題本 (Auto)"
     if not check_duplicate(df, user, mistake_nb_name, row['Word']):
         new_entry = {
-            'User': user, 
+            'User': str(user), 
             'Notebook': mistake_nb_name,
             'Word': row['Word'],
             'IPA': row['IPA'],
@@ -307,13 +316,13 @@ def login_page():
 
 def main_app():
     df_all = st.session_state.df
-    current_user = st.session_state.current_user
+    current_user = str(st.session_state.current_user) # 確保也是字串
     
-    # 修正問題1：撈取資料邏輯 (如果 User 欄位為空，視為公用資料，也撈出來)
     if 'User' not in df_all.columns: df_all['User'] = ""
     
-    # 篩選：(使用者是自己) OR (使用者是空的/公用的)
-    df = df_all[(df_all['User'] == current_user) | (df_all['User'] == "")]
+    # 關鍵修正：將資料表中的 User 轉為字串後再比對
+    # 篩選邏輯：(使用者是自己) OR (使用者是空的/公用的)
+    df = df_all[(df_all['User'].astype(str) == current_user) | (df_all['User'].astype(str) == "")]
 
     st.markdown(f"""
         <div class="title-container">
@@ -351,14 +360,14 @@ def main_app():
         target_nb = st.selectbox("選擇筆記本", notebooks) if nb_mode == "選擇現有" else st.text_input("輸入新筆記本名稱", "我的單字本")
 
         st.divider()
-        # 修正問題4：新增照片OCR選項
-        input_type = st.radio("輸入模式", ["🔤 單字輸入", "🚀 批次貼上", "📷 照片掃描 (Beta)"], horizontal=True)
+        
+        # 暫時隱藏照片掃描，等安裝好套件再開
+        input_type = st.radio("輸入模式", ["🔤 單字輸入", "🚀 批次貼上"], horizontal=True)
 
         if input_type == "🔤 單字輸入":
             w_in = st.text_input("輸入英文單字", placeholder="例如: Valve")
             c1, c2 = st.columns(2)
             with c1:
-                # 修正問題2：找回翻譯按鈕
                 if st.button("👀 Google 翻譯", use_container_width=True):
                     if w_in and not is_contains_chinese(w_in):
                         try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
@@ -374,7 +383,6 @@ def main_app():
                     else:
                         try:
                             ipa = f"[{eng_to_ipa.convert(w_in)}]"
-                            # 修正問題3：確保使用的是 Google 翻譯 (deep_translator 本身就是接 Google)
                             trans = GoogleTranslator(source='auto', target='zh-TW').translate(w_in)
                             new = {
                                 'User': current_user,
@@ -428,32 +436,6 @@ def main_app():
                     elif skipped_count > 0:
                         st.warning(f"⚠️ 所有 {skipped_count} 筆單字都重複了，沒有新增任何資料。")
 
-        elif input_type == "📷 照片掃描 (Beta)":
-            st.info("💡 請上傳含有英文單字的圖片，系統會自動辨識並列出單字。")
-            uploaded_file = st.file_uploader("上傳圖片", type=['png', 'jpg', 'jpeg'])
-            if uploaded_file is not None:
-                try:
-                    image = Image.open(uploaded_file)
-                    st.image(image, caption='上傳的圖片', use_column_width=True)
-                    if st.button("🔍 開始辨識單字"):
-                        with st.spinner("正在辨識中... (這可能需要一點時間)"):
-                            # 這裡使用 pytesseract 進行 OCR
-                            # 注意：在 Streamlit Cloud 上部署時，需要設定 packages.txt 安裝 tesseract-ocr
-                            text = pytesseract.image_to_string(image)
-                            # 簡單過濾出英文字
-                            words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-                            unique_words = list(set(words))
-                            
-                            if unique_words:
-                                st.success(f"辨識出 {len(unique_words)} 個單字：")
-                                # 將辨識出的單字放入批次輸入框供使用者確認
-                                result_text = ", ".join(unique_words)
-                                st.text_area("辨識結果 (請複製到批次貼上使用)", value=result_text, height=100)
-                            else:
-                                st.warning("未能辨識出足夠清晰的英文單字。")
-                except Exception as e:
-                    st.error(f"OCR 發生錯誤 (請確認伺服器已安裝 Tesseract): {e}")
-
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
             accents = {'美式 (US)': 'com', '英式 (UK)': 'co.uk', '澳式 (AU)': 'com.au', '印度 (IN)': 'co.in'}
@@ -495,7 +477,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v33.0 (OCR + Fix)")
+        st.caption("版本: v33.1 (Fix Data Type)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -555,7 +537,6 @@ def main_app():
             if 'card_idx' not in st.session_state: st.session_state.card_idx = 0
             idx = st.session_state.card_idx % len(filtered_df)
             row = filtered_df.iloc[idx]
-            
             c_p, c_c, c_n = st.columns([1, 4, 1])
             with c_p: 
                 st.write(""); st.write(""); st.write("") 
