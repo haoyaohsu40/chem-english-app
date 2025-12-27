@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.4"
+VERSION = "v37.5"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -71,12 +71,17 @@ st.markdown("""
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
     
-    a.google-link {
-        text-decoration: none; display: inline-block; padding: 8px 12px;
-        background-color: #f1f3f4; color: #1a73e8; border-radius: 8px;
-        font-weight: bold; border: 1px solid #dadce0; transition: all 0.2s;
+    /* 連結按鈕樣式 */
+    a.link-btn {
+        text-decoration: none; display: inline-block; padding: 6px 10px;
+        border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
+        transition: all 0.2s; margin-right: 5px; font-size: 16px;
     }
-    a.google-link:hover { background-color: #e8f0fe; border-color: #1a73e8; }
+    a.google-btn { background-color: #f1f3f4; color: #1a73e8; border-color: #dadce0; }
+    a.google-btn:hover { background-color: #e8f0fe; border-color: #1a73e8; }
+    
+    a.yahoo-btn { background-color: #f3e5f5; color: #720e9e; border-color: #e1bee7; }
+    a.yahoo-btn:hover { background-color: #f8bbd0; border-color: #720e9e; }
 
     .quiz-card {
         background-color: #fff8e1; padding: 40px; border-radius: 20px;
@@ -92,32 +97,13 @@ st.markdown("""
         text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
     }
     
-    /* 登入畫面樣式優化 */
     .login-container {
-        background-color: white; 
-        padding: 60px; /* 增加內距 */
-        border-radius: 25px;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
-        text-align: center;
-        max-width: 800px; /* 加寬容器 */
-        margin: 50px auto; 
-        border-top: 12px solid #4CAF50;
+        background-color: white; padding: 60px; border-radius: 25px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1); text-align: center;
+        max-width: 800px; margin: 50px auto; border-top: 12px solid #4CAF50;
     }
-    
-    .welcome-text {
-        font-size: 28px; /* 加大歡迎詞 */
-        color: #666; 
-        margin-bottom: 10px;
-        font-weight: bold;
-    }
-    
-    .login-title {
-        color: #2E7D32; 
-        margin-top: 0;
-        font-size: 48px; /* 加大標題 */
-        font-weight: 900;
-        white-space: nowrap; /* 強制不換行 */
-    }
+    .welcome-text { font-size: 28px; color: #666; margin-bottom: 10px; font-weight: bold; }
+    .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; white-space: nowrap; }
 
     div[data-testid="stCameraInput"] video {
         width: 100% !important; height: auto !important; border-radius: 15px;
@@ -440,7 +426,6 @@ def check_spelling():
 # ==========================================
 
 def login_page():
-    # 優化後的 HTML 結構
     st.markdown("""
         <div class="login-container">
             <div class="welcome-text">歡迎來到</div>
@@ -600,7 +585,6 @@ def main_app():
                         st.warning(f"⚠️ 單字 '{w_in}' 已經在 '{target_nb}' 裡面囉！")
                     else:
                         try:
-                            # 確保抓取到正確的密碼
                             user_rows = df[df['User'] == current_user]
                             user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
                             
@@ -733,7 +717,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption(f"版本: {VERSION} (UI Polished)")
+        st.caption(f"版本: {VERSION} (Dict Link + UI Polished)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -783,8 +767,16 @@ def main_app():
                 with c3: 
                     if st.button("🔊", key=f"p{i}"): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
                 with c4:
-                    google_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
-                    st.markdown(f'<a href="{google_url}" target="_blank" class="google-link" title="去 Google 翻譯查看">🌐 G</a>', unsafe_allow_html=True)
+                    # 雙按鈕設計
+                    g_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
+                    y_url = f"https://tw.dictionary.search.yahoo.com/search?p={row['Word']}"
+                    
+                    st.markdown(f'''
+                        <div style="display: flex;">
+                            <a href="{g_url}" target="_blank" class="link-btn google-btn" title="Google 翻譯">G</a>
+                            <a href="{y_url}" target="_blank" class="link-btn yahoo-btn" title="Yahoo 字典 (多重解釋)">Y!</a>
+                        </div>
+                    ''', unsafe_allow_html=True)
                 with c5:
                     if st.button("🗑️", key=f"d{i}"):
                         df_all = df_all[~((df_all['User'].astype(str) == current_user) & (df_all['Word'] == row['Word']) & (df_all['Notebook'] == row['Notebook']))]
