@@ -12,13 +12,19 @@ import time
 import re
 import uuid
 import random
-# from PIL import Image # 暫時移除以免報錯
-# import pytesseract # 暫時移除以免報錯
+
+# --- 安全引入 OCR 套件 (防當機設計) ---
+try:
+    from PIL import Image
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
 
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (修復版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (防彈版)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -88,12 +94,25 @@ def get_google_sheet_data():
         client = gspread.authorize(creds)
         sheet = client.open("vocab_db").sheet1
         data = sheet.get_all_records()
-        if not data: return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
+        
+        # 建立預設結構
+        default_cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
+        if not data: return pd.DataFrame(columns=default_cols)
         
         df = pd.DataFrame(data)
-        # 關鍵修正：將 User 欄位強制轉為字串，避免數字與文字比對失敗
-        if 'User' in df.columns:
-            df['User'] = df['User'].astype(str)
+        
+        # --- 🛡️ 關鍵修復：強力資料清洗 🛡️ ---
+        # 1. 補齊缺失欄位
+        for col in default_cols:
+            if col not in df.columns:
+                df[col] = ""
+        
+        # 2. 強制轉型為字串 (解決 25259(int) != "25259"(str) 的問題)
+        # fillna('') 把空值變成空字串，astype(str) 轉文字，str.strip() 去除前後空白
+        df['User'] = df['User'].fillna('').astype(str).str.strip()
+        df['Notebook'] = df['Notebook'].fillna('').astype(str).str.strip()
+        df['Word'] = df['Word'].fillna('').astype(str).str.strip()
+        
         return df
     except Exception as e:
         st.error(f"連線失敗：{e}")
@@ -108,14 +127,14 @@ def save_to_google_sheet(df):
         sheet = client.open("vocab_db").sheet1
         sheet.clear()
         
-        # 確保存回去之前，User 也是字串格式
-        if 'User' in df.columns:
-            df['User'] = df['User'].astype(str)
-            
+        # 存檔前也要強力清洗
         cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
         for c in cols:
             if c not in df.columns: df[c] = ""
-        df = df[cols]
+        
+        # 轉字串，避免存回 Google Sheet 變成奇怪格式
+        df = df[cols].astype(str)
+        
         update_data = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(update_data)
     except Exception as e:
@@ -128,8 +147,11 @@ def is_contains_chinese(string):
 
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
-    # 這裡也要確保 user 是字串
-    mask = (df['User'] == str(user)) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
+    # 比對時也確保都是字串且無空白
+    target_user = str(user).strip()
+    target_word = str(word).lower().strip()
+    
+    mask = (df['User'] == target_user) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == target_word)
     return not df[mask].empty
 
 def to_excel(df):
@@ -194,7 +216,7 @@ def add_to_mistake_notebook(row, user):
     mistake_nb_name = "🔥 錯題本 (Auto)"
     if not check_duplicate(df, user, mistake_nb_name, row['Word']):
         new_entry = {
-            'User': str(user), 
+            'User': str(user).strip(), 
             'Notebook': mistake_nb_name,
             'Word': row['Word'],
             'IPA': row['IPA'],
@@ -316,13 +338,17 @@ def login_page():
 
 def main_app():
     df_all = st.session_state.df
-    current_user = str(st.session_state.current_user) # 確保也是字串
+    current_user = str(st.session_state.current_user).strip() # 確保無空白
     
     if 'User' not in df_all.columns: df_all['User'] = ""
     
-    # 關鍵修正：將資料表中的 User 轉為字串後再比對
-    # 篩選邏輯：(使用者是自己) OR (使用者是空的/公用的)
-    df = df_all[(df_all['User'].astype(str) == current_user) | (df_all['User'].astype(str) == "")]
+    # 🕵️‍♂️ 資料檢查區 (除錯用) - 如果資料還是出不來，看這裡最準
+    # st.write("--- 除錯訊息 ---")
+    # st.write(f"當前登入者: [{current_user}]")
+    # st.write(f"資料庫前 5 筆 User: {df_all['User'].head().tolist()}")
+    
+    # 篩選邏輯：(User是自己) OR (User是空字串)
+    df = df_all[(df_all['User'] == current_user) | (df_all['User'] == "")]
 
     st.markdown(f"""
         <div class="title-container">
@@ -361,8 +387,14 @@ def main_app():
 
         st.divider()
         
-        # 暫時隱藏照片掃描，等安裝好套件再開
-        input_type = st.radio("輸入模式", ["🔤 單字輸入", "🚀 批次貼上"], horizontal=True)
+        # 根據 OCR 是否可用，決定顯示哪些選項
+        options = ["🔤 單字輸入", "🚀 批次貼上"]
+        if OCR_AVAILABLE:
+            options.append("📷 照片掃描 (Beta)")
+        else:
+            st.warning("⚠️ OCR 套件未安裝，照片掃描功能暫停使用")
+            
+        input_type = st.radio("輸入模式", options, horizontal=True)
 
         if input_type == "🔤 單字輸入":
             w_in = st.text_input("輸入英文單字", placeholder="例如: Valve")
@@ -436,6 +468,26 @@ def main_app():
                     elif skipped_count > 0:
                         st.warning(f"⚠️ 所有 {skipped_count} 筆單字都重複了，沒有新增任何資料。")
 
+        elif input_type == "📷 照片掃描 (Beta)" and OCR_AVAILABLE:
+            st.info("💡 請上傳含有英文單字的圖片")
+            uploaded_file = st.file_uploader("上傳圖片", type=['png', 'jpg', 'jpeg'])
+            if uploaded_file is not None:
+                try:
+                    image = Image.open(uploaded_file)
+                    st.image(image, caption='預覽', use_column_width=True)
+                    if st.button("🔍 辨識"):
+                        with st.spinner("辨識中..."):
+                            text = pytesseract.image_to_string(image)
+                            words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
+                            unique_words = list(set(words))
+                            if unique_words:
+                                result_text = ", ".join(unique_words)
+                                st.text_area("辨識結果 (複製後去批次貼上)", value=result_text, height=100)
+                            else:
+                                st.warning("沒看到單字")
+                except Exception as e:
+                    st.error(f"錯誤: {e}")
+
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
             accents = {'美式 (US)': 'com', '英式 (UK)': 'co.uk', '澳式 (AU)': 'com.au', '印度 (IN)': 'co.in'}
@@ -477,7 +529,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v33.1 (Fix Data Type)")
+        st.caption("版本: v33.2 (Bulletproof)")
 
     # 4. 主畫面控制區
     st.divider()
