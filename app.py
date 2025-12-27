@@ -18,7 +18,7 @@ OCR_AVAILABLE = False
 try:
     from PIL import Image, ImageEnhance, ImageFilter, ImageOps
     import pytesseract
-    from pytesseract import Output # 新增 Output 模組用於讀取信心度
+    from pytesseract import Output
     OCR_AVAILABLE = True
 except ImportError:
     print("OCR 套件未安裝。")
@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (v35.1)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (v35.2)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -89,11 +89,8 @@ st.markdown("""
         max-width: 500px; margin: 50px auto; border-top: 10px solid #4CAF50;
     }
 
-    /* 強制放大 Camera Input */
     div[data-testid="stCameraInput"] video {
-        width: 100% !important;
-        height: auto !important;
-        border-radius: 15px;
+        width: 100% !important; height: auto !important; border-radius: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,9 +109,7 @@ def get_google_sheet_data():
         data = sheet.get_all_records()
         
         cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
-        
-        if not data: 
-            return pd.DataFrame(columns=cols)
+        if not data: return pd.DataFrame(columns=cols)
         
         df = pd.DataFrame(data)
         for c in cols:
@@ -165,38 +160,39 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- v35.1 核心：智能 OCR 引擎 ---
+# --- v35.2 核心：雙語混合 OCR 引擎 ---
 def smart_ocr_process(image):
     """
-    1. 影像增強
-    2. 使用 image_to_data 獲取詳細資訊
-    3. 過濾低信心度 (Confidence < 60) 的垃圾結果
+    使用 中文+英文 雙語辨識模式，避免將中文誤判為英文亂碼。
+    然後用 Regex 提取出純英文單字。
     """
     # 1. 影像前處理
     img = image.convert('L') # 轉灰階
     enhancer = ImageEnhance.Contrast(img)
     img = enhancer.enhance(2.0) # 提高對比
-    # 自動二值化 (讓背景變白，字變黑)
-    img = ImageOps.autocontrast(img)
+    # 稍微放大影像，對小字有幫助
+    width, height = img.size
+    img = img.resize((width*2, height*2), Image.Resampling.LANCZOS)
     
-    # 2. 獲取詳細數據 (包含信心度 conf)
-    custom_config = r'--oem 3 --psm 6' # 假設是區塊文字
-    data = pytesseract.image_to_data(img, lang='eng', config=custom_config, output_type=Output.DICT)
+    # 2. 執行 OCR
+    # 關鍵：lang='chi_tra+eng' 讓它認識繁體中文和英文
+    # 這樣它看到「資料」就會認成「資料」，而不是「Nas」
+    custom_config = r'--oem 3 --psm 6' 
+    try:
+        text = pytesseract.image_to_string(img, lang='chi_tra+eng', config=custom_config)
+    except pytesseract.TesseractError:
+        # 如果使用者還沒裝中文包，退回英文模式，但效果會較差
+        text = pytesseract.image_to_string(img, lang='eng', config=custom_config)
     
-    valid_words = []
-    n_boxes = len(data['text'])
+    # 3. 提取英文單字
+    # 邏輯：找出所有長度 >= 3 的連續英文字母
+    words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
     
-    for i in range(n_boxes):
-        # 信心度檢查：如果信心度小於 60，視為亂碼或誤判的中文字
-        conf = int(data['conf'][i])
-        text = data['text'][i].strip()
-        
-        if conf > 60 and len(text) > 2: # 信心度 > 60 且長度 > 2
-            # 二次檢查：是否只包含英文字母 (過濾掉奇怪符號)
-            if re.match(r'^[a-zA-Z]+$', text):
-                valid_words.append(text)
+    # 過濾掉明顯的雜訊 (例如全是子音的字，或是常見的誤判)
+    # 這裡做簡單的去重排序
+    valid_words = sorted(list(set(words)))
                 
-    return sorted(list(set(valid_words)))
+    return valid_words, text # 回傳單字列表和原始文字(供除錯)
 
 # --- 語音功能 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
@@ -511,24 +507,27 @@ def main_app():
                     image = Image.open(uploaded_file)
                     st.image(image, caption='預覽', use_column_width=True)
                     
-                    if st.button("🔍 智能辨識 (過濾亂碼)"):
-                        with st.spinner("🤖 正在過濾背景雜訊與中文字..."):
-                            # 使用新的智能 OCR 函數
-                            valid_words = smart_ocr_process(image)
+                    if st.button("🔍 智能辨識 (中英混合模式)"):
+                        with st.spinner("🤖 正在處理中 (雙語辨識 + 智慧過濾)..."):
+                            # 使用新的 v35.2 雙語 OCR 函數
+                            valid_words, raw_text = smart_ocr_process(image)
                             
-                            # 存入 session_state 以便後續使用
+                            # 存入 session_state
                             st.session_state.ocr_results = valid_words
                             
                             if valid_words:
                                 result_text = ", ".join(valid_words)
-                                st.success(f"🎉 成功捕捉 {len(valid_words)} 個可信英文單字！")
-                                st.text_area("辨識結果", value=result_text, height=100)
+                                st.success(f"🎉 成功捕捉 {len(valid_words)} 個英文單字！")
+                                st.text_area("辨識結果 (英文)", value=result_text, height=100)
                             else:
-                                st.warning("😔 過濾後沒有發現清晰的英文單字。請試著只拍英文部分，或避開中文干擾。")
+                                st.warning("😔 沒抓到英文單字。可能圖片中主要是中文，或英文太模糊。")
+                                
+                            with st.expander("查看原始辨識文字 (除錯用)"):
+                                st.text(raw_text)
                 except Exception as e:
                     st.error(f"錯誤: {e}")
             
-            # 顯示「全部加入」按鈕 (只要有辨識結果就顯示)
+            # 顯示「全部加入」按鈕
             if st.session_state.ocr_results:
                 st.write("---")
                 st.write(f"準備將 **{len(st.session_state.ocr_results)}** 個單字加入 **{target_nb}**")
@@ -608,7 +607,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v35.1 (Smart Filter + Batch Add)")
+        st.caption("版本: v35.2 (Mix-Language OCR)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -651,7 +650,6 @@ def main_app():
     if mode == 'list':
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
-                # 修改：調整欄位比例
                 c1, c2, c3, c4, c5 = st.columns([3, 2, 1, 1, 1])
                 
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
