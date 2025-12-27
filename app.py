@@ -210,9 +210,11 @@ def smart_ocr_process_v4(image):
         if conf > 50 and len(clean_word) >= 3 and re.match(r'^[a-zA-Z]+$', clean_word):
              # --- 防線三：字典驗證 (殺手鐧) ---
              # 利用 eng_to_ipa 檢查。如果回傳的發音結尾沒有星號，表示在庫裡找到了這個字。
-             # 這能有效過濾掉像 "PoP" 這種 AI 幻覺出來的假字。
+             # 或者，如果它是首字大寫 (Proper Noun) 像 DataFrame/Pandas，也放行。
              ipa_result = eng_to_ipa.convert(clean_word)
-             if not ipa_result.endswith('*'):
+             
+             # 邏輯：(有發音) OR (首字大寫且長度>3 - 保留專有名詞)
+             if not ipa_result.endswith('*') or (clean_word[0].isupper() and len(clean_word) > 3):
                  valid_words.add(clean_word)
 
     # 重新組裝原始文字供參考
