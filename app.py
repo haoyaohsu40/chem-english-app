@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v39.1 (Stable Fix)"
+VERSION = "v39.2 (Final Audio Fix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -434,7 +434,6 @@ def main_app():
                 
                 if st.session_state.active_audio_key and st.session_state.active_audio_key.startswith("sidebar_"):
                     ab = get_audio_bytes(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
-                    # 修正：移除 start_time 避免衝突
                     if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
@@ -557,7 +556,6 @@ def main_app():
                         st.rerun()
                     if st.session_state.active_audio_key == f"list_{row['Word']}_{i}":
                         ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
-                        # 修正：移除 start_time=0 避免衝突
                         if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
                 with c4:
@@ -594,7 +592,6 @@ def main_app():
                         st.rerun()
                     if st.session_state.active_audio_key == f"card_{row['Word']}_{idx}":
                         ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
-                        # 修正：移除 start_time=0 避免衝突
                         if ab: st.audio(ab, format='audio/mp3', autoplay=True)
         else: st.info("無單字")
 
@@ -611,7 +608,9 @@ def main_app():
                         tld = st.session_state.accent_tld
                         if step == "英文": text = row['Word']; lang = 'en'
                         elif step == "中文": text = row['Chinese']; lang = 'zh-TW'; tld = 'com'
+                        
                         audio_data = get_audio_bytes(text, lang, tld, st.session_state.is_slow)
+                        
                         with ph.container():
                             html_content = f"""<div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;margin-bottom:10px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:24px;margin-bottom:20px;">{row['IPA']}</div>"""
                             if step == "中文": html_content += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>"""
@@ -619,9 +618,9 @@ def main_app():
                             html_content += "</div>"
                             st.markdown(html_content, unsafe_allow_html=True)
                             
-                            # 修正：移除 start_time=0，並簡化 key 以避免衝突
+                            # 修正：移除 start_time=0
                             if audio_data: 
-                                st.audio(audio_data, format='audio/mp3', autoplay=True, key=f"slide_{uuid.uuid4()}")
+                                st.audio(audio_data, format='audio/mp3', autoplay=True, key=f"slide_audio_{uuid.uuid4()}")
                         time.sleep(delay)
                 ph.success("輪播結束")
 
@@ -642,6 +641,7 @@ def main_app():
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
+            # 修正：移除 start_time=0
             if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
             if not st.session_state.quiz_answered:
@@ -676,6 +676,7 @@ def main_app():
 
             if st.session_state.active_audio_key and st.session_state.active_audio_key.startswith("spell_"):
                 sab = get_audio_bytes(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
+                # 修正：移除 start_time=0
                 if sab: st.audio(sab, format='audio/mp3', autoplay=True)
 
             if not st.session_state.spell_checked:
