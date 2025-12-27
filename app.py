@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.2"
+VERSION = "v37.3"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -422,7 +422,8 @@ def check_spelling():
 def login_page():
     st.markdown("""
         <div class="login-container">
-            <h1 style="color: #2E7D32;">🚀 帥哥美女請登入</h1>
+            <p style="font-size: 20px; color: #555; margin-bottom: 5px;">歡迎來到</p>
+            <h1 style="color: #2E7D32; margin-top: 0;">🚀 AI 智能單字速記通 🎓</h1>
             <p style="color: #666; font-size: 18px;">請輸入您的帳號與密碼</p>
         </div>
     """, unsafe_allow_html=True)
@@ -438,17 +439,13 @@ def login_page():
         )
         
         if user_input:
-            # 關鍵修正：檢查該使用者是否有「任何」一筆資料有密碼
-            # 只要有一筆有密碼，就視為老用戶
             user_data = df[df['User'] == user_input.strip()]
             is_new_user = True
             stored_password = ""
             
             if not user_data.empty:
-                # 過濾出有密碼的列
                 pwd_rows = user_data[user_data['Password'] != ""]
                 if not pwd_rows.empty:
-                    # 抓取第一筆有效的密碼
                     stored_password = pwd_rows.iloc[0]['Password']
                     is_new_user = False
             
@@ -463,12 +460,10 @@ def login_page():
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
                             
-                            # 如果是老用戶但沒設密碼 (轉型期)，把舊資料補上密碼
                             if not user_data.empty:
                                 df.loc[df['User'] == user_input.strip(), 'Password'] = new_pwd
                                 save_to_google_sheet(df)
                             else:
-                                # 真‧新用戶，建一筆 dummy data
                                 dummy_entry = {
                                     'User': user_input.strip(),
                                     'Password': new_pwd,
@@ -496,7 +491,6 @@ def login_page():
                         st.session_state.current_user = user_input.strip()
                         st.session_state.logged_in = True
                         
-                        # 自動修復：登入成功後，檢查是否有漏掉密碼的舊資料，幫忙補上
                         if (user_data['Password'] == "").any():
                             df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
                             save_to_google_sheet(df)
@@ -830,6 +824,7 @@ def main_app():
                 next_question(target_df); st.rerun()
             q = st.session_state.quiz_current
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
+            
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
@@ -886,5 +881,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
