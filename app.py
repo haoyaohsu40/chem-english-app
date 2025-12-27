@@ -153,28 +153,32 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- v32 經典語音功能 (HTML 隱藏式播放) ---
-# 加入快取機制，讓經典功能跑得更快
+# --- v32 經典語音核心 ---
+# 1. 快取 gTTS 資料 (負責跟 Google 拿檔案)
 @st.cache_data(show_spinner=False)
-def get_html_audio_content(text, lang='en', tld='com', slow=False, autoplay=False):
+def get_gtts_data(text, lang='en', tld='com', slow=False):
     try:
         clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
-        if not clean_text: return ""
+        if not clean_text: return None
         tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
         fp = BytesIO()
         tts.write_to_fp(fp)
-        b64 = base64.b64encode(fp.getvalue()).decode()
-        
-        # 產生不重複的 ID 避免衝突
-        unique_id = f"audio_{uuid.uuid4()}"
-        
-        if autoplay:
-            # 隱藏式自動播放
-            return f"""<audio autoplay style="display:none;" id="{unique_id}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-        else:
-            # 顯示控制項
-            return f"""<audio id="{unique_id}" controls style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-    except: return ""
+        return base64.b64encode(fp.getvalue()).decode()
+    except: return None
+
+# 2. 產生 HTML (每次都用不同 ID，解決無法重複播放問題)
+def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visible=True):
+    b64 = get_gtts_data(text, lang, tld, slow)
+    if not b64: return ""
+    
+    unique_id = f"audio_{uuid.uuid4()}"
+    
+    if not visible or autoplay:
+        # 隱藏式/自動播放 (輪播用)
+        return f"""<audio autoplay style="display:none;" id="{unique_id}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+    else:
+        # 顯示控制項 (列表/側邊欄用)
+        return f"""<audio id="{unique_id}" controls style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
 
 def generate_custom_audio(df, sequence, tld='com', slow=False):
     full_text = ""
@@ -432,10 +436,9 @@ def main_app():
                         try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
                         except: st.error("翻譯失敗")
             with c2:
-                # 側邊欄試聽：回歸 v32 的 HTML 播放
                 if st.button("🔊 試聽", use_container_width=True):
                     if w_in:
-                        st.markdown(get_html_audio_content(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                        st.markdown(get_audio_html(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
@@ -552,9 +555,9 @@ def main_app():
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
-                    # 列表模式：回歸 v32 的按鈕觸發 HTML 播放
+                    # v40 核心：回歸 HTML 播放器，穩定性最高
                     if st.button("🔊", key=f"p{i}"):
-                        st.markdown(get_html_audio_content(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                        st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
                 with c4:
                     g_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
@@ -586,7 +589,7 @@ def main_app():
                     if st.button("👀 看中文", use_container_width=True): st.info(f"{row['Chinese']}")
                 with b2: 
                     if st.button("🔊 聽發音", use_container_width=True): 
-                        st.markdown(get_html_audio_content(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                        st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
         else: st.info("無單字")
 
     elif mode == 'slide':
@@ -603,17 +606,16 @@ def main_app():
                         if step == "英文": text = row['Word']; lang = 'en'
                         elif step == "中文": text = row['Chinese']; lang = 'zh-TW'; tld = 'com'
                         
-                        # 輪播：回歸 v32 的 HTML 隱藏播放，但加上快取
-                        html_audio = get_html_audio_content(text, lang, tld, st.session_state.is_slow, autoplay=True)
+                        # 輪播：使用 v32 的 hidden html 方式，這最穩定不會 crash
+                        html_audio = get_audio_html(text, lang, tld, st.session_state.is_slow, autoplay=True, visible=False)
                         
                         with ph.container():
                             html_content = f"""<div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;margin-bottom:10px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:24px;margin-bottom:20px;">{row['IPA']}</div>"""
                             if step == "中文": html_content += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>"""
                             elif step == "英文": html_content += f"""<div style="color:#aaa;">Listening...</div>"""
                             html_content += "</div>"
-                            # 插入音訊
-                            html_content += html_audio
-                            st.markdown(html_content, unsafe_allow_html=True)
+                            # 注入音訊 HTML
+                            st.markdown(html_content + html_audio, unsafe_allow_html=True)
                         
                         time.sleep(delay)
                 ph.success("輪播結束")
@@ -634,8 +636,8 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
-            # 測驗模式：回歸 HTML 播放
-            st.markdown(get_html_audio_content(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+            # 測驗模式：進入時自動播放
+            st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
@@ -663,13 +665,13 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            # 拼字模式：手動重聽按鈕 (回歸 HTML)
+            # 手動重聽按鈕
             if st.button("🔊 重聽發音", use_container_width=True):
-                st.markdown(get_html_audio_content(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
             
             # 剛進入時自動播放
             if not st.session_state.spell_checked and st.session_state.spell_input == "":
-                 st.markdown(get_html_audio_content(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                 st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
             if not st.session_state.spell_checked:
                 inp = st.text_input("輸入單字", key="spin")
