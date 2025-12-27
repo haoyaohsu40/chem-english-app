@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v39.0 (Speed+Fix)"
+VERSION = "v39.1 (Stable Fix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -157,7 +157,6 @@ def to_excel(df):
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
     return ""
 
-# 🔥 快取加速：聽過的單字直接秒開，解決延遲問題
 @st.cache_data(show_spinner=False)
 def get_audio_bytes(text, lang='en', tld='com', slow=False):
     try:
@@ -261,7 +260,8 @@ def add_words_callback():
             except: pass
     if new_entries:
         df_all = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-        st.session_state.df = df_all; save_to_google_sheet(df_all)
+        st.session_state.df = df_all
+        save_to_google_sheet(df_all)
         st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！"
         st.session_state.ocr_editor = ""
     elif skipped > 0: st.session_state.msg_warning = "⚠️ 所有單字都重複了！"
@@ -431,8 +431,10 @@ def main_app():
                     if w_in:
                         st.session_state.active_audio_key = f"sidebar_{w_in}_{uuid.uuid4()}"
                         st.rerun()
+                
                 if st.session_state.active_audio_key and st.session_state.active_audio_key.startswith("sidebar_"):
                     ab = get_audio_bytes(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
+                    # 修正：移除 start_time 避免衝突
                     if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
@@ -555,7 +557,9 @@ def main_app():
                         st.rerun()
                     if st.session_state.active_audio_key == f"list_{row['Word']}_{i}":
                         ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
+                        # 修正：移除 start_time=0 避免衝突
                         if ab: st.audio(ab, format='audio/mp3', autoplay=True)
+
                 with c4:
                     g_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
                     y_url = f"https://tw.dictionary.search.yahoo.com/search?p={row['Word']}"
@@ -590,6 +594,7 @@ def main_app():
                         st.rerun()
                     if st.session_state.active_audio_key == f"card_{row['Word']}_{idx}":
                         ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
+                        # 修正：移除 start_time=0 避免衝突
                         if ab: st.audio(ab, format='audio/mp3', autoplay=True)
         else: st.info("無單字")
 
@@ -614,9 +619,9 @@ def main_app():
                             html_content += "</div>"
                             st.markdown(html_content, unsafe_allow_html=True)
                             
-                            # 🔥 核心修正：給每個音訊一個絕對唯一的 ID，防止重複當機
+                            # 修正：移除 start_time=0，並簡化 key 以避免衝突
                             if audio_data: 
-                                st.audio(audio_data, format='audio/mp3', start_time=0, autoplay=True, key=f"slide_audio_{uuid.uuid4()}")
+                                st.audio(audio_data, format='audio/mp3', autoplay=True, key=f"slide_{uuid.uuid4()}")
                         time.sleep(delay)
                 ph.success("輪播結束")
 
