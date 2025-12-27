@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定 (必須是第一行)
 # ==========================================
-VERSION = "v40.2 (Classic Restore)"
+VERSION = "v40.3 (Layout & Loop Fix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -67,6 +67,13 @@ st.markdown("""
     .welcome-text { font-size: 28px; color: #666; margin-bottom: 10px; font-weight: bold; }
     .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; white-space: nowrap; }
     .version-tag { position: fixed; bottom: 10px; left: 15px; color: #aaa; font-size: 14px; font-family: monospace; }
+    
+    .quiz-card {
+        background-color: #fff8e1; padding: 40px; border-radius: 20px;
+        text-align: center; border: 4px dashed #ffb74d; margin-bottom: 20px;
+    }
+    .quiz-word { font-size: 60px; font-weight: 900; color: #1565C0; margin: 20px 0; }
+    .mistake-mode { border: 4px solid #ef5350 !important; background-color: #ffebee !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,8 +131,7 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- v32 經典還原：語音核心 ---
-# 1. 只快取最慢的網路下載部分 (Base64)
+# --- v32 經典語音核心 (增強版) ---
 @st.cache_data(show_spinner=False)
 def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
@@ -136,25 +142,17 @@ def get_audio_base64(text, lang='en', tld='com', slow=False):
         return base64.b64encode(fp.getvalue()).decode()
     except: return None
 
-# 2. 每次產生全新的 HTML，強制瀏覽器重播 (v32 邏輯)
 def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visible=True):
     b64 = get_audio_base64(text, lang, tld, slow)
     if not b64: return ""
-    
-    # 產生隨機 ID，這是「連按有效」的關鍵
     rand_id = f"audio_{uuid.uuid4()}"
-    
-    # 根據需求決定要不要隱藏
     display_style = "display:none;" if (not visible) else "width: 100%; margin-top: 5px;"
     autoplay_attr = "autoplay" if autoplay else ""
-    
-    # 這是最原始的 HTML 寫法，相容性最高
     return f"""
     <audio id="{rand_id}" controls {autoplay_attr} style="{display_style}">
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
     </audio>
-    """ 
-    # 上面這行註解很重要，它強迫 Streamlit 認為這段 HTML 是新的，進而刷新 DOM
+    """
 
 def generate_custom_audio(df, sequence, tld='com', slow=False):
     full_text = ""
@@ -300,7 +298,6 @@ def check_spelling():
 # ==========================================
 
 def login_page():
-    # 使用 placeholder 防止畫面重疊
     login_ph = st.empty()
     with login_ph.container():
         st.markdown("""<div class="login-container"><div class="welcome-text">歡迎來到</div><h1 class="login-title">🚀 AI 智能單字速記通 🎓</h1><p style="color: #666; font-size: 18px; margin-top: 20px;">請輸入您的帳號與密碼</p></div>""", unsafe_allow_html=True)
@@ -396,11 +393,13 @@ def main_app():
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("👀 翻譯", use_container_width=True):
-                    try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
-                    except: st.error("翻譯失敗")
+                    if w_in and not is_contains_chinese(w_in):
+                        try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
+                        except: st.error("翻譯失敗")
             with c2:
                 if st.button("🔊 試聽", use_container_width=True):
-                    if w_in: st.markdown(get_audio_html(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                    if w_in:
+                        st.markdown(get_audio_html(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
@@ -496,7 +495,6 @@ def main_app():
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
-                    # 使用 HTML 語法播放 (v32 邏輯)，這是你最滿意的版本
                     if st.button("🔊", key=f"p{i}"):
                         st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
@@ -541,13 +539,14 @@ def main_app():
             else:
                 for _, row in filtered_df.iloc[::-1].iterrows():
                     for step in st.session_state.play_order:
+                        ph.empty() # 清空畫面，確保不重複ID
                         text = ""
                         lang = 'en'
                         tld = st.session_state.accent_tld
                         if step == "英文": text = row['Word']; lang = 'en'
                         elif step == "中文": text = row['Chinese']; lang = 'zh-TW'; tld = 'com'
                         
-                        # 輪播：使用 v32 的 HTML 注入播放，並確保 ID 不重複
+                        # 輪播：使用 HTML 隱藏播放
                         html_audio = get_audio_html(text, lang, tld, st.session_state.is_slow, autoplay=True, visible=False)
                         
                         with ph.container():
@@ -577,8 +576,9 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
-            # 測驗模式：進入時自動播放 (HTML)
-            st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
+            # 手動播放按鈕 (v32 風格)
+            if st.button("🔊 播放題目發音", use_container_width=True):
+                st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
@@ -606,7 +606,7 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動重聽按鈕
+            # 手動重聽按鈕 (v32 風格)
             if st.button("🔊 重聽發音", use_container_width=True):
                 st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
             
