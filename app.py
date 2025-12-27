@@ -422,7 +422,7 @@ def check_spelling():
 def login_page():
     st.markdown("""
         <div class="login-container">
-            <h1 style="color: #2E7D32;">🚀 學生登入</h1>
+            <h1 style="color: #2E7D32;">🚀 帥哥美女請登入</h1>
             <p style="color: #666; font-size: 18px;">請輸入您的學號與密碼</p>
         </div>
     """, unsafe_allow_html=True)
@@ -886,3 +886,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
