@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v38.2 (Audio Fix)"
+VERSION = "v38.3 (Hotfix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -61,6 +61,7 @@ st.markdown("""
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
     
+    /* 連結按鈕樣式 */
     a.link-btn {
         text-decoration: none; display: inline-block; padding: 6px 10px;
         border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
@@ -68,6 +69,7 @@ st.markdown("""
     }
     a.google-btn { background-color: #f1f3f4; color: #1a73e8; border-color: #dadce0; }
     a.google-btn:hover { background-color: #e8f0fe; border-color: #1a73e8; }
+    
     a.yahoo-btn { background-color: #f3e5f5; color: #720e9e; border-color: #e1bee7; }
     a.yahoo-btn:hover { background-color: #f8bbd0; border-color: #720e9e; }
 
@@ -92,7 +94,10 @@ st.markdown("""
     }
     .welcome-text { font-size: 28px; color: #666; margin-bottom: 10px; font-weight: bold; }
     .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; white-space: nowrap; }
+    
     .version-tag { position: fixed; bottom: 10px; left: 15px; color: #aaa; font-size: 14px; font-family: monospace; }
+    
+    .stAudio { margin-top: 5px; height: 40px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -140,6 +145,12 @@ def save_to_google_sheet(df):
         sheet.update(update_data)
     except Exception as e:
         st.error(f"儲存失敗：{e}")
+
+# --- 補回遺失的函式 ---
+def is_contains_chinese(string):
+    for char in str(string):
+        if '\u4e00' <= char <= '\u9fff': return True
+    return False
 
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
@@ -230,41 +241,7 @@ def initialize_session_state():
     if 'msg_success' not in st.session_state: st.session_state.msg_success = ""
     if 'msg_warning' not in st.session_state: st.session_state.msg_warning = ""
     
-    # 這裡用來記錄目前正在播放哪個單字的音檔，以便持久化顯示播放器
     if 'active_audio_key' not in st.session_state: st.session_state.active_audio_key = None
-
-def add_words_callback():
-    final_text = st.session_state.ocr_editor
-    target_nb = st.session_state.target_nb_key
-    current_user = str(st.session_state.current_user).strip()
-    df = st.session_state.df
-    user_pwd = ""
-    if not df.empty:
-        user_rows = df[df['User'] == current_user]
-        if not user_rows.empty: user_pwd = user_rows.iloc[0]['Password']
-
-    words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text) if w.strip()]
-    new_entries = []
-    skipped = 0
-    
-    for w in words_to_add:
-        if not w or not re.match(r'^[a-zA-Z]+$', w): continue
-        if check_duplicate(df, current_user, target_nb, w): skipped += 1
-        else:
-            try:
-                ipa = f"[{eng_to_ipa.convert(w)}]"
-                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                new_entries.append({'User': current_user, 'Password': user_pwd, 'Notebook': target_nb, 'Word': w, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')})
-            except: pass
-            
-    if new_entries:
-        df_all = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-        st.session_state.df = df_all
-        save_to_google_sheet(df_all)
-        st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！"
-        st.session_state.ocr_editor = ""
-    elif skipped > 0: st.session_state.msg_warning = "⚠️ 所有單字都重複了！"
-    else: st.session_state.msg_warning = "⚠️ 沒有有效的英文單字可加入。"
 
 def next_question(df):
     if df.empty: return
@@ -304,8 +281,7 @@ def next_spelling(df):
     st.session_state.spell_input = ""
     st.session_state.spell_checked = False
     st.session_state.spell_correct = False
-    # 切換題目時，自動設定為要播放的狀態
-    st.session_state.active_audio_key = f"spell_{target_row['Word']}_{uuid.uuid4()}"
+    st.session_state.active_audio_key = f"spell_auto_{uuid.uuid4()}"
 
 def check_spelling():
     if not st.session_state.spell_current.empty:
@@ -423,18 +399,14 @@ def main_app():
                         try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
                         except: st.error("翻譯失敗")
             with c2:
-                # 側邊欄試聽：使用狀態記憶
                 if st.button("🔊 試聽", use_container_width=True):
                     if w_in:
-                        # 設定一個唯一的 key，讓播放器知道要出現
                         st.session_state.active_audio_key = f"sidebar_{w_in}_{uuid.uuid4()}"
-            
-            # 如果目前狀態是要播放側邊欄單字，就顯示播放器
-            if st.session_state.active_audio_key and st.session_state.active_audio_key.startswith("sidebar_"):
-                # 從 key 中提取單字 (簡單做法)
-                target_word = w_in # 假設輸入框沒變
-                ab = get_audio_bytes(target_word, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
-                if ab: st.audio(ab, format='audio/mp3', autoplay=True)
+                        st.rerun()
+                
+                if st.session_state.active_audio_key and st.session_state.active_audio_key.startswith("sidebar_"):
+                    ab = get_audio_bytes(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow)
+                    if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
@@ -551,16 +523,13 @@ def main_app():
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
-                    # 列表模式：按鈕觸發後，更新 session state 讓播放器持久顯示
                     if st.button("🔊", key=f"p{i}"):
                         st.session_state.active_audio_key = f"list_{row['Word']}_{i}"
                         st.rerun()
                     
-                    # 檢查是否為當前活躍的音訊
                     if st.session_state.active_audio_key == f"list_{row['Word']}_{i}":
                         ab = get_audio_bytes(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
                         if ab: st.audio(ab, format='audio/mp3', autoplay=True)
-                        else: st.error("音訊錯誤")
 
                 with c4:
                     g_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
@@ -591,7 +560,6 @@ def main_app():
                 with b1: 
                     if st.button("👀 看中文", use_container_width=True): st.info(f"{row['Chinese']}")
                 with b2: 
-                    # 卡片模式：同樣使用狀態記憶
                     if st.button("🔊 聽發音", use_container_width=True): 
                         st.session_state.active_audio_key = f"card_{row['Word']}_{idx}"
                         st.rerun()
@@ -641,8 +609,6 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
-            # 測驗模式：進入時自動播放一次
-            # 這裡我們也加上手動播放按鈕，以防萬一
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
             if ab: st.audio(ab, format='audio/mp3', autoplay=True)
 
@@ -672,14 +638,10 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            # 拼字模式：手動重聽按鈕
             if st.button("🔊 重聽發音", use_container_width=True):
-                # 更新 key 觸發重繪
                 st.session_state.active_audio_key = f"spell_{sq['Word']}_{uuid.uuid4()}"
                 st.rerun()
 
-            # 檢查是否需要播放 (包含剛進入題目時)
-            # 注意：這裡使用 active_audio_key 來控制播放
             if st.session_state.active_audio_key and st.session_state.active_audio_key.startswith("spell_"):
                 sab = get_audio_bytes(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
                 if sab: st.audio(sab, format='audio/mp3', autoplay=True)
