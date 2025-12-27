@@ -25,7 +25,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (v34.0)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (v34.1)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -386,8 +386,10 @@ def main_app():
         st.divider()
         
         ocr_opts = ["🔤 單字輸入", "🚀 批次貼上"]
-        if OCR_AVAILABLE: ocr_opts.append("📷 拍照輸入")
-        else: st.warning("⚠️ OCR 套件未安裝或載入失敗，拍照功能暫停。")
+        if OCR_AVAILABLE:
+            ocr_opts.append("📷 拍照輸入")
+            ocr_opts.append("📂 上傳圖片") # 新增此選項
+        else: st.warning("⚠️ OCR 套件未安裝或載入失敗，拍照/上傳功能暫停。")
         
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
@@ -464,27 +466,44 @@ def main_app():
                     elif skipped_count > 0:
                         st.warning(f"⚠️ 所有 {skipped_count} 筆單字都重複了，沒有新增任何資料。")
 
-        # 修改：使用 camera_input 讓手機直接喚醒相機
         elif input_type == "📷 拍照輸入" and OCR_AVAILABLE:
             st.info("💡 請拍攝含有英文單字的畫面")
-            # 這裡改成 camera_input
             camera_image = st.camera_input("點擊拍照")
-            
             if camera_image is not None:
                 try:
                     image = Image.open(camera_image)
                     with st.spinner("🔍 正在辨識單字中..."):
                         text = pytesseract.image_to_string(image)
-                        # 過濾出長度大於3的英文字
                         words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
                         unique_words = list(set(words))
-                        
                         if unique_words:
                             result_text = ", ".join(unique_words)
                             st.text_area("辨識結果 (請複製到批次貼上使用)", value=result_text, height=150)
                             st.success(f"成功辨識 {len(unique_words)} 個單字！")
                         else:
                             st.warning("畫面中沒看到清晰的英文單字，請重拍一張。")
+                except Exception as e:
+                    st.error(f"錯誤: {e}")
+
+        # 新增：保留原本的上傳功能
+        elif input_type == "📂 上傳圖片" and OCR_AVAILABLE:
+            st.info("💡 請上傳含有英文單字的圖片")
+            uploaded_file = st.file_uploader("上傳圖片", type=['png', 'jpg', 'jpeg'])
+            if uploaded_file is not None:
+                try:
+                    image = Image.open(uploaded_file)
+                    st.image(image, caption='預覽', use_column_width=True)
+                    if st.button("🔍 辨識"):
+                        with st.spinner("辨識中..."):
+                            text = pytesseract.image_to_string(image)
+                            words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
+                            unique_words = list(set(words))
+                            if unique_words:
+                                result_text = ", ".join(unique_words)
+                                st.text_area("辨識結果 (請複製到批次貼上使用)", value=result_text, height=150)
+                                st.success(f"成功辨識 {len(unique_words)} 個單字！")
+                            else:
+                                st.warning("沒看到單字")
                 except Exception as e:
                     st.error(f"錯誤: {e}")
 
@@ -529,7 +548,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v34.0 (Camera Input + Google Link)")
+        st.caption("版本: v34.1 (Full OCR Support)")
 
     # 4. 主畫面控制區
     st.divider()
