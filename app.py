@@ -18,6 +18,7 @@ OCR_AVAILABLE = False
 try:
     from PIL import Image, ImageEnhance, ImageFilter, ImageOps
     import pytesseract
+    from pytesseract import Output # 新增 Output 模組用於讀取信心度
     OCR_AVAILABLE = True
 except ImportError:
     print("OCR 套件未安裝。")
@@ -25,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (v35.0)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (v35.1)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -164,35 +165,38 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- 🔥 超級影像增強 (v35.0 核心) ---
-def super_enhance_image(image):
+# --- v35.1 核心：智能 OCR 引擎 ---
+def smart_ocr_process(image):
     """
-    針對 OCR 進行暴力增強：
-    1. 轉灰階
-    2. 放大 2 倍 (讓小字變大)
-    3. 二值化 (只剩黑與白，去除陰影)
+    1. 影像增強
+    2. 使用 image_to_data 獲取詳細資訊
+    3. 過濾低信心度 (Confidence < 60) 的垃圾結果
     """
-    # 1. 轉灰階
-    img = image.convert('L')
-    
-    # 2. 影像放大 (Upscaling) - Tesseract 喜歡大字
-    width, height = img.size
-    new_size = (width * 2, height * 2)
-    img = img.resize(new_size, Image.Resampling.LANCZOS)
-    
-    # 3. 增強對比與銳利度
+    # 1. 影像前處理
+    img = image.convert('L') # 轉灰階
     enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.5) # 強烈對比
-    img = img.filter(ImageFilter.SHARPEN)
-    
-    # 4. 二值化 (Binarization) - 自動閾值
-    # 這會把淺灰色的雜訊全部變成白色背景
+    img = enhancer.enhance(2.0) # 提高對比
+    # 自動二值化 (讓背景變白，字變黑)
     img = ImageOps.autocontrast(img)
-    thresh = 128
-    fn = lambda x : 255 if x > thresh else 0
-    img = img.point(fn, mode='1')
     
-    return img
+    # 2. 獲取詳細數據 (包含信心度 conf)
+    custom_config = r'--oem 3 --psm 6' # 假設是區塊文字
+    data = pytesseract.image_to_data(img, lang='eng', config=custom_config, output_type=Output.DICT)
+    
+    valid_words = []
+    n_boxes = len(data['text'])
+    
+    for i in range(n_boxes):
+        # 信心度檢查：如果信心度小於 60，視為亂碼或誤判的中文字
+        conf = int(data['conf'][i])
+        text = data['text'][i].strip()
+        
+        if conf > 60 and len(text) > 2: # 信心度 > 60 且長度 > 2
+            # 二次檢查：是否只包含英文字母 (過濾掉奇怪符號)
+            if re.match(r'^[a-zA-Z]+$', text):
+                valid_words.append(text)
+                
+    return sorted(list(set(valid_words)))
 
 # --- 語音功能 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
@@ -289,6 +293,9 @@ def initialize_session_state():
     if 'spell_correct' not in st.session_state: st.session_state.spell_correct = False
     if 'spell_score' not in st.session_state: st.session_state.spell_score = 0
     if 'spell_total' not in st.session_state: st.session_state.spell_total = 0
+    
+    # OCR 暫存結果
+    if 'ocr_results' not in st.session_state: st.session_state.ocr_results = []
 
 # --- 測驗邏輯 ---
 def next_question(df):
@@ -418,8 +425,7 @@ def main_app():
         
         ocr_opts = ["🔤 單字輸入", "🚀 批次貼上"]
         if OCR_AVAILABLE:
-            ocr_opts.append("📷 專業拍照/上傳")
-            # ocr_opts.append("💻 視訊鏡頭 (電腦用)") # 隱藏舊的，因為手機上用上傳體驗更好
+            ocr_opts.append("📷 拍照/上傳圖片")
         else: st.warning("⚠️ OCR 套件未安裝或載入失敗。")
         
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
@@ -496,41 +502,70 @@ def main_app():
                     elif skipped_count > 0:
                         st.warning(f"⚠️ 所有 {skipped_count} 筆單字都重複了，沒有新增任何資料。")
 
-        elif input_type == "📷 專業拍照/上傳" and OCR_AVAILABLE:
-            st.info("💡 **手機用戶請點選下方按鈕，選擇「相機」拍照可獲得最佳畫質** (支援對焦/縮放)")
-            
-            uploaded_file = st.file_uploader("點擊拍攝或上傳", type=['png', 'jpg', 'jpeg'], key="native_cam")
+        elif input_type == "📷 拍照/上傳圖片" and OCR_AVAILABLE:
+            st.info("💡 手機用戶請選擇「拍照」或「媒體瀏覽器」")
+            uploaded_file = st.file_uploader("點擊上傳或拍照", type=['png', 'jpg', 'jpeg'])
             
             if uploaded_file is not None:
                 try:
                     image = Image.open(uploaded_file)
-                    st.image(image, caption='預覽 (已自動優化)', use_column_width=True)
+                    st.image(image, caption='預覽', use_column_width=True)
                     
-                    if st.button("🔍 智能辨識"):
-                        with st.spinner("🤖 正在進行 AI 影像增強與辨識..."):
-                            # 1. 超級影像增強
-                            processed_img = super_enhance_image(image)
+                    if st.button("🔍 智能辨識 (過濾亂碼)"):
+                        with st.spinner("🤖 正在過濾背景雜訊與中文字..."):
+                            # 使用新的智能 OCR 函數
+                            valid_words = smart_ocr_process(image)
                             
-                            # 2. 執行 OCR (加上 psm 11 尋找稀疏文字)
-                            custom_config = r'--oem 3 --psm 11'
-                            text = pytesseract.image_to_string(processed_img, lang='eng', config=custom_config)
+                            # 存入 session_state 以便後續使用
+                            st.session_state.ocr_results = valid_words
                             
-                            with st.expander("查看 AI 看到了什麼 (除錯用)"):
-                                st.image(processed_img, caption="AI 眼中的黑白影像")
-                                st.text(text)
-
-                            # 3. 萃取單字 (過濾掉亂碼，只留 3 個字母以上的字)
-                            words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-                            unique_words = sorted(list(set(words))) # 排序
-                            
-                            if unique_words:
-                                result_text = ", ".join(unique_words)
-                                st.success(f"🎉 成功捕捉 {len(unique_words)} 個單字！")
-                                st.text_area("辨識結果 (請複製到批次貼上使用)", value=result_text, height=150)
+                            if valid_words:
+                                result_text = ", ".join(valid_words)
+                                st.success(f"🎉 成功捕捉 {len(valid_words)} 個可信英文單字！")
+                                st.text_area("辨識結果", value=result_text, height=100)
                             else:
-                                st.warning("😔 畫面中沒看到清晰的英文單字。建議：靠近一點、避開陰影、使用手機原生相機拍照。")
+                                st.warning("😔 過濾後沒有發現清晰的英文單字。請試著只拍英文部分，或避開中文干擾。")
                 except Exception as e:
                     st.error(f"錯誤: {e}")
+            
+            # 顯示「全部加入」按鈕 (只要有辨識結果就顯示)
+            if st.session_state.ocr_results:
+                st.write("---")
+                st.write(f"準備將 **{len(st.session_state.ocr_results)}** 個單字加入 **{target_nb}**")
+                
+                if st.button("🚀 全部加入單字本", type="primary"):
+                    new_entries = []
+                    skipped = 0
+                    bar = st.progress(0)
+                    total = len(st.session_state.ocr_results)
+                    
+                    for i, w in enumerate(st.session_state.ocr_results):
+                        if check_duplicate(df, current_user, target_nb, w):
+                            skipped += 1
+                        else:
+                            try:
+                                ipa = f"[{eng_to_ipa.convert(w)}]"
+                                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
+                                new_entries.append({
+                                    'User': current_user,
+                                    'Notebook': target_nb, 
+                                    'Word': w, 
+                                    'IPA': ipa, 
+                                    'Chinese': trans, 
+                                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
+                                })
+                            except: pass
+                        bar.progress((i+1)/total)
+                    
+                    if new_entries:
+                        df_all = pd.concat([df_all, pd.DataFrame(new_entries)], ignore_index=True)
+                        st.session_state.df = df_all
+                        save_to_google_sheet(df_all)
+                        st.success(f"✅ 成功加入 {len(new_entries)} 筆 (跳過 {skipped} 筆重複)")
+                        st.session_state.ocr_results = [] # 清空結果
+                        time.sleep(2); st.rerun()
+                    else:
+                        st.warning("⚠️ 所有單字都重複了！")
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
@@ -573,7 +608,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v35.0 (Native Camera + Super OCR)")
+        st.caption("版本: v35.1 (Smart Filter + Batch Add)")
 
     # 4. 主畫面控制區
     st.divider()
