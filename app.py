@@ -13,20 +13,10 @@ import re
 import uuid
 import random
 
-# --- 安全引入 OCR 套件 ---
-OCR_AVAILABLE = False
-try:
-    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-    import pytesseract
-    from pytesseract import Output
-    OCR_AVAILABLE = True
-except ImportError:
-    pass
-
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.5"
+VERSION = "v38.0 (Lite)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -97,16 +87,31 @@ st.markdown("""
         text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
     }
     
+    /* 登入畫面樣式優化 */
     .login-container {
-        background-color: white; padding: 60px; border-radius: 25px;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.1); text-align: center;
-        max-width: 800px; margin: 50px auto; border-top: 12px solid #4CAF50;
+        background-color: white; 
+        padding: 60px; 
+        border-radius: 25px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.1); 
+        text-align: center;
+        max-width: 800px; 
+        margin: 50px auto; 
+        border-top: 12px solid #4CAF50;
     }
-    .welcome-text { font-size: 28px; color: #666; margin-bottom: 10px; font-weight: bold; }
-    .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; white-space: nowrap; }
-
-    div[data-testid="stCameraInput"] video {
-        width: 100% !important; height: auto !important; border-radius: 15px;
+    
+    .welcome-text {
+        font-size: 28px; 
+        color: #666; 
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
+    
+    .login-title {
+        color: #2E7D32; 
+        margin-top: 0;
+        font-size: 48px; 
+        font-weight: 900;
+        white-space: nowrap; 
     }
     
     .version-tag {
@@ -172,6 +177,11 @@ def save_to_google_sheet(df):
     except Exception as e:
         st.error(f"儲存失敗：{e}")
 
+def is_contains_chinese(string):
+    for char in str(string):
+        if '\u4e00' <= char <= '\u9fff': return True
+    return False
+
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
     target_user = str(user).strip()
@@ -185,45 +195,7 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-def smart_ocr_process_v5(image):
-    img = image.convert('L')
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.5) 
-    img = ImageOps.autocontrast(img) 
-    
-    custom_config = r'--oem 3 --psm 6'
-    try:
-        data = pytesseract.image_to_data(img, lang='chi_tra+eng', config=custom_config, output_type=Output.DICT)
-    except pytesseract.TesseractError:
-        data = pytesseract.image_to_data(img, lang='eng', config=custom_config, output_type=Output.DICT)
-
-    valid_words = set()
-    n_boxes = len(data['text'])
-    raw_text_accumulator = []
-    
-    whitelist = {'dataframe', 'pandas', 'series', 'python', 'import', 'print', 'list', 'dict', 'tuple', 'set'}
-
-    for i in range(n_boxes):
-        text = data['text'][i]
-        try:
-            conf = int(float(data['conf'][i]))
-        except:
-            conf = 0
-            
-        if text.strip():
-            raw_text_accumulator.append(text)
-
-        clean_word = re.sub(r'^[^a-zA-Z]+|[^a-zA-Z]+$', '', text).strip()
-        
-        if conf > 50 and len(clean_word) > 2 and re.match(r'^[a-zA-Z]+$', clean_word):
-            if clean_word.isupper() and clean_word.lower() not in whitelist:
-                continue
-            ipa_result = eng_to_ipa.convert(clean_word)
-            if not ipa_result.endswith('*') or clean_word.lower() in whitelist:
-                valid_words.add(clean_word)
-
-    return sorted(list(valid_words), key=str.lower), " ".join(raw_text_accumulator)
-
+# --- 語音功能 ---
 def text_to_speech_visible(text, lang='en', tld='com', slow=False):
     try:
         clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
@@ -295,6 +267,10 @@ def add_to_mistake_notebook(row, user):
         return True
     return False
 
+# ==========================================
+# 3. 狀態初始化
+# ==========================================
+
 def initialize_session_state():
     if 'logged_in' not in st.session_state: st.session_state.logged_in = False
     if 'current_user' not in st.session_state: st.session_state.current_user = None
@@ -319,52 +295,10 @@ def initialize_session_state():
     if 'spell_score' not in st.session_state: st.session_state.spell_score = 0
     if 'spell_total' not in st.session_state: st.session_state.spell_total = 0
     
-    if 'ocr_editor' not in st.session_state: st.session_state.ocr_editor = ""
     if 'msg_success' not in st.session_state: st.session_state.msg_success = ""
     if 'msg_warning' not in st.session_state: st.session_state.msg_warning = ""
 
-def add_words_callback():
-    final_text = st.session_state.ocr_editor
-    target_nb = st.session_state.target_nb_key
-    current_user = str(st.session_state.current_user).strip()
-    
-    df = st.session_state.df
-    user_pwd = ""
-    if not df.empty:
-        user_rows = df[df['User'] == current_user]
-        if not user_rows.empty:
-            user_pwd = user_rows.iloc[0]['Password']
-
-    words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text) if w.strip()]
-    new_entries = []
-    skipped = 0
-    
-    for w in words_to_add:
-        if not w or not re.match(r'^[a-zA-Z]+$', w): continue
-        if check_duplicate(df, current_user, target_nb, w):
-            skipped += 1
-        else:
-            try:
-                ipa = f"[{eng_to_ipa.convert(w)}]"
-                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                new_entries.append({
-                    'User': current_user, 'Password': user_pwd, 'Notebook': target_nb, 
-                    'Word': w, 'IPA': ipa, 'Chinese': trans, 
-                    'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
-                })
-            except: pass
-            
-    if new_entries:
-        df_all = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-        st.session_state.df = df_all
-        save_to_google_sheet(df_all)
-        st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！(重複略過 {skipped} 筆)"
-        st.session_state.ocr_editor = ""
-    elif skipped > 0:
-        st.session_state.msg_warning = "⚠️ 所有單字都重複了！"
-    else:
-        st.session_state.msg_warning = "⚠️ 沒有有效的英文單字可加入。"
-
+# --- 測驗邏輯 ---
 def next_question(df):
     if df.empty: return
     target_row = df.sample(1).iloc[0]
@@ -561,10 +495,6 @@ def main_app():
         st.divider()
         
         ocr_opts = ["🔤 單字輸入", "🚀 批次貼上"]
-        if OCR_AVAILABLE:
-            ocr_opts.append("📷 拍照/上傳圖片")
-        else: st.warning("⚠️ OCR 套件未安裝或載入失敗。")
-        
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
         if input_type == "🔤 單字輸入":
@@ -604,7 +534,8 @@ def main_app():
                         except Exception as e: st.error(f"錯誤: {e}")
         
         elif input_type == "🚀 批次貼上":
-            bulk_in = st.text_area("📋 批次貼上 (逗號或換行分隔)", height=150)
+            st.info("💡 提示：請將其他來源 (如 Gemini, ChatGPT) 產生的單字複製到下方。以逗號或換行分隔。")
+            bulk_in = st.text_area("📋 貼上單字區", height=150)
             if st.button("🚀 批次加入", type="primary"):
                 if bulk_in and target_nb:
                     words = re.split(r'[,\n，]', bulk_in)
@@ -642,39 +573,6 @@ def main_app():
                         time.sleep(2); st.rerun()
                     elif skipped_count > 0:
                         st.warning(f"⚠️ 所有 {skipped_count} 筆單字都重複了，沒有新增任何資料。")
-
-        elif input_type == "📷 拍照/上傳圖片" and OCR_AVAILABLE:
-            st.info("💡 手機用戶請選擇「拍照」或「媒體瀏覽器」")
-            uploaded_file = st.file_uploader("點擊上傳或拍照", type=['png', 'jpg', 'jpeg'])
-            
-            if uploaded_file is not None:
-                try:
-                    image = Image.open(uploaded_file)
-                    st.image(image, caption='預覽', use_column_width=True)
-                    
-                    if st.button("🔍 智能辨識 (v5 嚴格模式)"):
-                        with st.spinner("🤖 正在過濾雜訊、檢查字典..."):
-                            valid_words, raw_text = smart_ocr_process_v5(image)
-                            result_text = ", ".join(valid_words)
-                            st.session_state.ocr_editor = result_text
-                            
-                            if valid_words:
-                                st.success(f"🎉 成功捕捉到 {len(valid_words)} 個單字！")
-                            else:
-                                st.warning("😔 經過嚴格過濾後，沒有發現有效的英文單字。")
-                                
-                            with st.expander("查看原始資料 (除錯用)"):
-                                st.text(raw_text)
-                except Exception as e:
-                    st.error(f"錯誤: {e}")
-            
-            st.text_area("📝 辨識結果 (請刪除不需要的字)", key="ocr_editor", height=150)
-            
-            if st.session_state.ocr_editor:
-                st.write("---")
-                count = len([w for w in re.split(r'[,\n ]', st.session_state.ocr_editor) if w.strip()])
-                st.write(f"準備將約 **{count}** 個單字加入 **{st.session_state.target_nb_key}**")
-                st.button("🚀 確認加入", type="primary", on_click=add_words_callback)
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
@@ -717,7 +615,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption(f"版本: {VERSION} (Dict Link + UI Polished)")
+        st.caption(f"版本: {VERSION}")
 
     # 4. 主畫面控制區
     st.divider()
