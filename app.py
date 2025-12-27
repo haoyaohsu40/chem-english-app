@@ -26,7 +26,7 @@ except ImportError:
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.0"
+VERSION = "v37.1"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -122,14 +122,12 @@ def get_google_sheet_data():
         sheet = client.open("vocab_db").sheet1
         data = sheet.get_all_records()
         
-        # 定義標準欄位 (包含 Password)
         cols = ['User', 'Password', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
         
         if not data: return pd.DataFrame(columns=cols)
         
         df = pd.DataFrame(data)
         
-        # 自動修復：如果 Password 欄位不存在，自動加上
         if 'Password' not in df.columns:
             df['Password'] = ""
             
@@ -154,7 +152,6 @@ def save_to_google_sheet(df):
         sheet = client.open("vocab_db").sheet1
         sheet.clear()
         
-        # 確保有 User 和 Password 欄位
         if 'User' in df.columns: df['User'] = df['User'].astype(str).str.strip()
         if 'Password' in df.columns: df['Password'] = df['Password'].astype(str).str.strip()
             
@@ -274,7 +271,6 @@ def add_to_mistake_notebook(row, user):
     df = st.session_state.df
     mistake_nb_name = "🔥 錯題本 (Auto)"
     if not check_duplicate(df, user, mistake_nb_name, row['Word']):
-        # 注意：這裡也要保留 User 的 Password，雖然錯題本不需要密碼驗證，但為了資料完整性
         user_pwd = df[df['User'] == user]['Password'].iloc[0] if not df[df['User'] == user].empty else ""
         new_entry = {
             'User': str(user).strip(), 
@@ -323,7 +319,6 @@ def add_words_callback():
     target_nb = st.session_state.target_nb_key
     current_user = str(st.session_state.current_user).strip()
     
-    # 從目前 DataFrame 抓取該使用者的密碼 (如果有)
     df = st.session_state.df
     user_pwd = ""
     if not df.empty:
@@ -429,21 +424,23 @@ def login_page():
         </div>
     """, unsafe_allow_html=True)
     
-    # 檢查該學號是否已經註冊過 (有密碼)
     df = st.session_state.df
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        user_input = st.text_input("學號 / 姓名", placeholder="例如: s12345", key="login_user")
+        # 修改提示文字
+        user_input = st.text_input(
+            "學號 / 姓名 / 英文ID (皆可，下次請憑此登入)", 
+            placeholder="例如: s12345, 王小明, or Tony", 
+            key="login_user"
+        )
         
         if user_input:
-            # 檢查這個 User 是否已存在且有密碼
             user_data = df[df['User'] == user_input.strip()]
             is_new_user = True
             stored_password = ""
             
             if not user_data.empty:
-                # 取得該使用者的第一筆資料中的密碼
                 stored_password = str(user_data.iloc[0]['Password']).strip()
                 if stored_password:
                     is_new_user = False
@@ -459,13 +456,11 @@ def login_page():
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
                             
-                            # 因為是新用戶，先在資料庫建一個「空」的資料來存密碼
-                            # 這樣下次登入才能驗證
                             dummy_entry = {
                                 'User': user_input.strip(),
                                 'Password': new_pwd,
                                 'Notebook': '預設筆記本',
-                                'Word': 'Welcome', # 預設一個歡迎單字
+                                'Word': 'Welcome',
                                 'IPA': '',
                                 'Chinese': '歡迎使用',
                                 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
@@ -480,7 +475,6 @@ def login_page():
                     else:
                         st.error("請輸入密碼")
             else:
-                # 舊用戶，驗證密碼
                 st.info("🔑 請輸入密碼登入")
                 pwd_input = st.text_input("密碼", type="password", autocomplete="current-password")
                 
@@ -572,9 +566,7 @@ def main_app():
                         st.warning(f"⚠️ 單字 '{w_in}' 已經在 '{target_nb}' 裡面囉！")
                     else:
                         try:
-                            # 取得使用者密碼 (如果有)
                             user_pwd = df[df['User'] == current_user].iloc[0]['Password'] if not df[df['User'] == current_user].empty else ""
-                            
                             ipa = f"[{eng_to_ipa.convert(w_in)}]"
                             trans = GoogleTranslator(source='auto', target='zh-TW').translate(w_in)
                             new = {
@@ -598,7 +590,6 @@ def main_app():
                     new_entries = []
                     skipped_count = 0
                     bar = st.progress(0)
-                    # 取得使用者密碼
                     user_pwd = df[df['User'] == current_user].iloc[0]['Password'] if not df[df['User'] == current_user].empty else ""
 
                     for i, w in enumerate(words):
@@ -816,6 +807,7 @@ def main_app():
                 next_question(target_df); st.rerun()
             q = st.session_state.quiz_current
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
+            
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
             ab = get_audio_bytes(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow)
