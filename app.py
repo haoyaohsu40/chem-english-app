@@ -14,17 +14,19 @@ import uuid
 import random
 
 # --- 安全引入 OCR 套件 (防當機設計) ---
+# 如果雲端安裝失敗，這段程式碼會讓 App 繼續執行，只是不開啟 OCR 功能
+OCR_AVAILABLE = False
 try:
     from PIL import Image
     import pytesseract
     OCR_AVAILABLE = True
 except ImportError:
-    OCR_AVAILABLE = False
+    print("OCR 套件未安裝，將暫時停用照片掃描功能。")
 
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (防彈版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (穩定版)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -95,27 +97,30 @@ def get_google_sheet_data():
         sheet = client.open("vocab_db").sheet1
         data = sheet.get_all_records()
         
-        # 建立預設結構
-        default_cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
-        if not data: return pd.DataFrame(columns=default_cols)
+        # 定義欄位順序
+        cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
+        
+        if not data: 
+            return pd.DataFrame(columns=cols)
         
         df = pd.DataFrame(data)
         
         # --- 🛡️ 關鍵修復：強力資料清洗 🛡️ ---
         # 1. 補齊缺失欄位
-        for col in default_cols:
-            if col not in df.columns:
-                df[col] = ""
+        for c in cols:
+            if c not in df.columns:
+                df[c] = ""
         
-        # 2. 強制轉型為字串 (解決 25259(int) != "25259"(str) 的問題)
-        # fillna('') 把空值變成空字串，astype(str) 轉文字，str.strip() 去除前後空白
-        df['User'] = df['User'].fillna('').astype(str).str.strip()
-        df['Notebook'] = df['Notebook'].fillna('').astype(str).str.strip()
-        df['Word'] = df['Word'].fillna('').astype(str).str.strip()
+        # 2. 強制將 'User' 欄位轉為純文字 (String)，並去除前後空白
+        # 這行是解決單字本空白的關鍵！
+        df['User'] = df['User'].astype(str).str.strip()
+        
+        # 3. 處理空值 (NaN)
+        df = df.fillna("")
         
         return df
     except Exception as e:
-        st.error(f"連線失敗：{e}")
+        st.error(f"資料庫連線錯誤：{e}")
         return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
 
 def save_to_google_sheet(df):
@@ -127,13 +132,16 @@ def save_to_google_sheet(df):
         sheet = client.open("vocab_db").sheet1
         sheet.clear()
         
-        # 存檔前也要強力清洗
+        # 存檔前也確保 User 是文字格式
+        if 'User' in df.columns:
+            df['User'] = df['User'].astype(str).str.strip()
+            
         cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
         for c in cols:
             if c not in df.columns: df[c] = ""
         
-        # 轉字串，避免存回 Google Sheet 變成奇怪格式
-        df = df[cols].astype(str)
+        # 重新排序並處理空值
+        df = df[cols].fillna("")
         
         update_data = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(update_data)
@@ -338,24 +346,26 @@ def login_page():
 
 def main_app():
     df_all = st.session_state.df
-    current_user = str(st.session_state.current_user).strip() # 確保無空白
+    # 確保當前使用者是字串
+    current_user = str(st.session_state.current_user).strip()
     
-    if 'User' not in df_all.columns: df_all['User'] = ""
-    
-    # 🕵️‍♂️ 資料檢查區 (除錯用) - 如果資料還是出不來，看這裡最準
-    # st.write("--- 除錯訊息 ---")
-    # st.write(f"當前登入者: [{current_user}]")
-    # st.write(f"資料庫前 5 筆 User: {df_all['User'].head().tolist()}")
-    
-    # 篩選邏輯：(User是自己) OR (User是空字串)
-    df = df_all[(df_all['User'] == current_user) | (df_all['User'] == "")]
-
+    # 1. 標題區
     st.markdown(f"""
         <div class="title-container">
             <h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1>
             <div class="sub-title">歡迎回來，{current_user}！ • 您的專屬學習空間</div>
         </div>
     """, unsafe_allow_html=True)
+
+    # 2. 資料篩選 (雙重保險)
+    if 'User' not in df_all.columns: 
+        df_all['User'] = ""
+    else:
+        df_all['User'] = df_all['User'].astype(str).str.strip()
+
+    # 篩選：(使用者是自己) OR (使用者是空的/公用的/nan)
+    # 這裡的 "nan" 是處理 pandas 讀取空值時可能轉成的字串
+    df = df_all[(df_all['User'] == current_user) | (df_all['User'] == "") | (df_all['User'] == "nan")]
 
     notebooks = df['Notebook'].unique().tolist()
     if "🔥 錯題本 (Auto)" not in notebooks: notebooks.append("🔥 錯題本 (Auto)")
@@ -372,6 +382,7 @@ def main_app():
     with c_m2:
         st.markdown(f"""<div class="metric-card"><div class="metric-label">📖 目前本子字數</div><div class="metric-value">{len(filtered_df)}</div></div>""", unsafe_allow_html=True)
 
+    # 3. 側邊欄
     with st.sidebar:
         st.info(f"👤 目前使用者：**{current_user}**")
         if st.button("🚪 登出"):
@@ -387,14 +398,12 @@ def main_app():
 
         st.divider()
         
-        # 根據 OCR 是否可用，決定顯示哪些選項
-        options = ["🔤 單字輸入", "🚀 批次貼上"]
-        if OCR_AVAILABLE:
-            options.append("📷 照片掃描 (Beta)")
-        else:
-            st.warning("⚠️ OCR 套件未安裝，照片掃描功能暫停使用")
-            
-        input_type = st.radio("輸入模式", options, horizontal=True)
+        # 根據 OCR 是否可用顯示選項
+        ocr_opts = ["🔤 單字輸入", "🚀 批次貼上"]
+        if OCR_AVAILABLE: ocr_opts.append("📷 照片掃描 (Beta)")
+        else: st.warning("⚠️ OCR 套件未安裝或載入失敗，照片掃描功能暫停。")
+        
+        input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
         if input_type == "🔤 單字輸入":
             w_in = st.text_input("輸入英文單字", placeholder="例如: Valve")
@@ -424,6 +433,7 @@ def main_app():
                                 'Chinese': trans, 
                                 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
                             }
+                            # 使用 df_all 來新增，確保完整性
                             df_all = pd.concat([df_all, pd.DataFrame([new])], ignore_index=True)
                             st.session_state.df = df_all
                             save_to_google_sheet(df_all)
@@ -515,7 +525,8 @@ def main_app():
             ren_new = st.text_input("輸入新名稱", key='ren_val')
             if st.button("確認更名"):
                 if ren_new and ren_new != ren_target:
-                    df_all.loc[(df_all['User'] == current_user) & (df_all['Notebook'] == ren_target), 'Notebook'] = ren_new
+                    # Modify ONLY rows for current user and selected notebook
+                    df_all.loc[(df_all['User'].astype(str) == current_user) & (df_all['Notebook'] == ren_target), 'Notebook'] = ren_new
                     st.session_state.df = df_all; save_to_google_sheet(df_all)
                     st.success(f"已更名為 {ren_new}"); time.sleep(1); st.rerun()
             
@@ -525,13 +536,14 @@ def main_app():
                 if st.session_state.get('confirm_del') != del_target:
                     st.warning("再按一次確認"); st.session_state.confirm_del = del_target
                 else:
-                    df_all = df_all[~((df_all['User'] == current_user) & (df_all['Notebook'] == del_target))]
+                    # Delete ONLY rows for current user and selected notebook
+                    df_all = df_all[~((df_all['User'].astype(str) == current_user) & (df_all['Notebook'] == del_target))]
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v33.2 (Bulletproof)")
+        st.caption("版本: v33.3 (Stable + Safe OCR)")
 
-    # 4. 主畫面控制區
+    # 4. Main Control Area
     st.divider()
     c_filt, c_tool = st.columns([1, 1.5])
     with c_filt:
@@ -553,7 +565,7 @@ def main_app():
                         st.download_button("⬇️ 下載 MP3", mp3, f"Audio_{current_nb}.mp3", "audio/mp3", use_container_width=True)
             else: st.button("🎵 設定順序後下載", disabled=True, use_container_width=True)
 
-    # 5. 導航按鈕
+    # 5. Navigation Buttons
     st.markdown("###")
     n1, n2, n3, n4, n5 = st.columns(5)
     def btn_type(mode_name): return "primary" if st.session_state.current_mode == mode_name else "secondary"
@@ -566,7 +578,7 @@ def main_app():
     
     st.divider()
 
-    # 6. 內容區
+    # 6. Content Area
     mode = st.session_state.current_mode
 
     if mode == 'list':
@@ -579,7 +591,8 @@ def main_app():
                     if st.button("🔊", key=f"p{i}"): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
                 with c4:
                     if st.button("🗑️", key=f"d{i}"):
-                        df_all = df_all[~((df_all['User'] == current_user) & (df_all['Word'] == row['Word']) & (df_all['Notebook'] == row['Notebook']))]
+                        # Logic to delete row for current user
+                        df_all = df_all[~((df_all['User'].astype(str) == current_user) & (df_all['Word'] == row['Word']) & (df_all['Notebook'] == row['Notebook']))]
                         st.session_state.df = df_all; save_to_google_sheet(df_all); st.rerun()
                 st.divider()
         else: st.info("目前無單字")
