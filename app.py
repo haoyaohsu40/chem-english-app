@@ -14,17 +14,17 @@ import uuid
 import random
 
 # ==========================================
-# 1. 頁面設定與 CSS 樣式
+# 1. 頁面設定 (必須是第一行)
 # ==========================================
-VERSION = "v40.1 (Cache Split Fix)"
+VERSION = "v40.2 (Classic Restore)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
+# ==========================================
+# 2. CSS 樣式
+# ==========================================
 st.markdown("""
 <style>
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-
     .title-container {
         text-align: center; padding: 20px 0 40px 0;
         background: linear-gradient(to bottom, #ffffff, #f8f9fa);
@@ -38,46 +38,27 @@ st.markdown("""
         margin: 0; padding: 0; font-family: 'Arial Black', sans-serif;
     }
     .sub-title { font-size: 16px; color: #78909c; margin-top: 8px; font-weight: 600; letter-spacing: 1.5px; }
-
     .metric-card {
         background: #ffffff; border-left: 6px solid #4CAF50; border-radius: 12px;
         padding: 15px 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         margin-bottom: 10px; transition: transform 0.2s;
     }
-    .metric-label { font-size: 16px; color: #546e7a; font-weight: bold; margin-bottom: 4px; }
-    .metric-value { font-size: 36px; font-weight: 800; color: #2e7d32; }
-
     .stButton>button { 
         border-radius: 12px; font-weight: bold; border: none;
         box-shadow: 0 4px 6px rgba(0,0,0,0.08); transition: all 0.2s;
         font-size: 18px !important; padding: 12px 20px; height: auto;
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
-
-    .stRadio label p, .stCheckbox label p, .stSelectbox label p, .stTextInput label p { font-size: 18px !important; }
-    .stMarkdown p { font-size: 18px; }
-
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
-    
     a.link-btn {
         text-decoration: none; display: inline-block; padding: 6px 10px;
         border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
         transition: all 0.2s; margin-right: 5px; font-size: 16px;
     }
     a.google-btn { background-color: #f1f3f4; color: #1a73e8; border-color: #dadce0; }
-    a.google-btn:hover { background-color: #e8f0fe; border-color: #1a73e8; }
     a.yahoo-btn { background-color: #f3e5f5; color: #720e9e; border-color: #e1bee7; }
-    a.yahoo-btn:hover { background-color: #f8bbd0; border-color: #720e9e; }
-
-    .quiz-card {
-        background-color: #fff8e1; padding: 40px; border-radius: 20px;
-        text-align: center; border: 4px dashed #ffb74d; margin-bottom: 20px;
-    }
-    .mistake-mode { border: 4px solid #ef5350 !important; background-color: #ffebee !important; }
-    .quiz-word { font-size: 70px !important; font-weight: 900; color: #1565C0; margin: 20px 0; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
-    
     .login-container {
         background-color: white; padding: 60px; border-radius: 25px;
         box-shadow: 0 15px 35px rgba(0,0,0,0.1); text-align: center;
@@ -90,7 +71,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 核心功能函式
+# 3. 核心功能
 # ==========================================
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -110,10 +91,8 @@ def get_google_sheet_data():
             if c not in df.columns: df[c] = ""
         df['User'] = df['User'].astype(str).str.strip()
         df['Password'] = df['Password'].astype(str).str.strip()
-        df = df.fillna("")
-        return df
-    except Exception as e:
-        return pd.DataFrame(columns=['User', 'Password', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
+        return df.fillna("")
+    except: return pd.DataFrame(columns=['User', 'Password', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
 
 def save_to_google_sheet(df):
     try:
@@ -132,19 +111,11 @@ def save_to_google_sheet(df):
         update_data = [df.columns.values.tolist()] + df.values.tolist()
         sheet.update(update_data)
         get_google_sheet_data.clear()
-    except Exception as e:
-        st.error(f"儲存失敗：{e}")
-
-def is_contains_chinese(string):
-    for char in str(string):
-        if '\u4e00' <= char <= '\u9fff': return True
-    return False
+    except Exception as e: st.error(f"儲存失敗：{e}")
 
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
-    target_user = str(user).strip()
-    target_word = str(word).lower().strip()
-    mask = (df['User'] == target_user) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == target_word)
+    mask = (df['User'] == str(user).strip()) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
     return not df[mask].empty
 
 def to_excel(df):
@@ -153,33 +124,37 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- v40.1 修正版：拆分快取 ---
-
-# 1. 只快取「下載音檔轉 Base64」這一步 (這是最花時間的)
+# --- v32 經典還原：語音核心 ---
+# 1. 只快取最慢的網路下載部分 (Base64)
 @st.cache_data(show_spinner=False)
-def get_gtts_data(text, lang='en', tld='com', slow=False):
+def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', '', str(text))
-        if not clean_text: return None
-        tts = gTTS(text=clean_text, lang=lang, tld=tld, slow=slow)
+        if not text: return None
+        tts = gTTS(text=str(text), lang=lang, tld=tld, slow=slow)
         fp = BytesIO()
         tts.write_to_fp(fp)
         return base64.b64encode(fp.getvalue()).decode()
     except: return None
 
-# 2. 產生 HTML 的函式「絕對不要快取」，確保每次 ID 都不一樣
+# 2. 每次產生全新的 HTML，強制瀏覽器重播 (v32 邏輯)
 def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visible=True):
-    # 先去快取拿資料 (如果以前拿過，這裡會秒回)
-    b64 = get_gtts_data(text, lang, tld, slow)
+    b64 = get_audio_base64(text, lang, tld, slow)
     if not b64: return ""
     
-    # 每次都產生新的 ID，騙過瀏覽器，強制它重新載入
-    unique_id = f"audio_{uuid.uuid4()}"
+    # 產生隨機 ID，這是「連按有效」的關鍵
+    rand_id = f"audio_{uuid.uuid4()}"
     
-    if not visible or autoplay:
-        return f"""<audio autoplay style="display:none;" id="{unique_id}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
-    else:
-        return f"""<audio id="{unique_id}" controls style="width: 100%; margin-top: 5px;"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+    # 根據需求決定要不要隱藏
+    display_style = "display:none;" if (not visible) else "width: 100%; margin-top: 5px;"
+    autoplay_attr = "autoplay" if autoplay else ""
+    
+    # 這是最原始的 HTML 寫法，相容性最高
+    return f"""
+    <audio id="{rand_id}" controls {autoplay_attr} style="{display_style}">
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+    </audio>
+    """ 
+    # 上面這行註解很重要，它強迫 Streamlit 認為這段 HTML 是新的，進而刷新 DOM
 
 def generate_custom_audio(df, sequence, tld='com', slow=False):
     full_text = ""
@@ -203,22 +178,14 @@ def add_to_mistake_notebook(row, user):
     if not check_duplicate(df, user, mistake_nb_name, row['Word']):
         user_rows = df[df['User'] == user]
         user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
-        new_entry = {
-            'User': str(user).strip(), 
-            'Password': user_pwd,
-            'Notebook': mistake_nb_name,
-            'Word': row['Word'],
-            'IPA': row['IPA'],
-            'Chinese': row['Chinese'],
-            'Date': pd.Timestamp.now().strftime('%Y-%m-%d')
-        }
+        new_entry = {'User': str(user).strip(), 'Password': user_pwd, 'Notebook': mistake_nb_name, 'Word': row['Word'], 'IPA': row['IPA'], 'Chinese': row['Chinese'], 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
         df = pd.concat([df, pd.DataFrame([new_entry])], ignore_index=True)
         st.session_state.df = df; save_to_google_sheet(df)
         return True
     return False
 
 # ==========================================
-# 3. 狀態初始化
+# 4. 狀態初始化
 # ==========================================
 
 def initialize_session_state():
@@ -230,6 +197,7 @@ def initialize_session_state():
     if 'is_slow' not in st.session_state: st.session_state.is_slow = False
     if 'current_mode' not in st.session_state: st.session_state.current_mode = 'list'
     
+    # 測驗相關
     if 'quiz_score' not in st.session_state: st.session_state.quiz_score = 0
     if 'quiz_total' not in st.session_state: st.session_state.quiz_total = 0
     if 'quiz_current' not in st.session_state: st.session_state.quiz_current = None
@@ -237,6 +205,7 @@ def initialize_session_state():
     if 'quiz_answered' not in st.session_state: st.session_state.quiz_answered = False
     if 'quiz_is_correct' not in st.session_state: st.session_state.quiz_is_correct = False
 
+    # 拼字相關
     if 'spell_current' not in st.session_state: st.session_state.spell_current = None
     if 'spell_input' not in st.session_state: st.session_state.spell_input = ""
     if 'spell_checked' not in st.session_state: st.session_state.spell_checked = False
@@ -256,7 +225,7 @@ def add_words_callback():
     if not df.empty:
         user_rows = df[df['User'] == current_user]
         if not user_rows.empty: user_pwd = user_rows.iloc[0]['Password']
-
+    
     words_to_add = [w.strip() for w in re.split(r'[,\n ]', final_text) if w.strip()]
     new_entries = []
     skipped = 0
@@ -271,8 +240,7 @@ def add_words_callback():
             except: pass
     if new_entries:
         df_all = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
-        st.session_state.df = df_all
-        save_to_google_sheet(df_all)
+        st.session_state.df = df_all; save_to_google_sheet(df_all)
         st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！"
         st.session_state.ocr_editor = ""
     elif skipped > 0: st.session_state.msg_warning = "⚠️ 所有單字都重複了！"
@@ -302,12 +270,10 @@ def check_answer(user_choice):
     st.session_state.quiz_total += 1
     current = st.session_state.quiz_current
     if user_choice == str(current['Chinese']):
-        st.session_state.quiz_score += 1
-        st.session_state.quiz_is_correct = True
+        st.session_state.quiz_score += 1; st.session_state.quiz_is_correct = True
     else:
         st.session_state.quiz_is_correct = False
-        if add_to_mistake_notebook(current, st.session_state.current_user): 
-            st.toast(f"已加入錯題本: {current['Word']}", icon="🔥")
+        if add_to_mistake_notebook(current, st.session_state.current_user): st.toast(f"已加入錯題本: {current['Word']}", icon="🔥")
 
 def next_spelling(df):
     if df.empty: return
@@ -324,20 +290,19 @@ def check_spelling():
         correct = str(st.session_state.spell_current['Word']).strip().lower()
         user = str(st.session_state.spell_input).strip().lower()
         if correct == user:
-            st.session_state.spell_score += 1
-            st.session_state.spell_correct = True
+            st.session_state.spell_score += 1; st.session_state.spell_correct = True
         else:
             st.session_state.spell_correct = False
-            if add_to_mistake_notebook(st.session_state.spell_current, st.session_state.current_user): 
-                st.toast(f"已加入錯題本: {st.session_state.spell_current['Word']}", icon="🔥")
+            if add_to_mistake_notebook(st.session_state.spell_current, st.session_state.current_user): st.toast(f"已加入錯題本: {st.session_state.spell_current['Word']}", icon="🔥")
 
 # ==========================================
-# 4. 主程式 Layout
+# 5. 主程式 Layout
 # ==========================================
 
 def login_page():
-    login_placeholder = st.empty()
-    with login_placeholder.container():
+    # 使用 placeholder 防止畫面重疊
+    login_ph = st.empty()
+    with login_ph.container():
         st.markdown("""<div class="login-container"><div class="welcome-text">歡迎來到</div><h1 class="login-title">🚀 AI 智能單字速記通 🎓</h1><p style="color: #666; font-size: 18px; margin-top: 20px;">請輸入您的帳號與密碼</p></div>""", unsafe_allow_html=True)
         df = st.session_state.df
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -352,6 +317,7 @@ def login_page():
                     if not pwd_rows.empty:
                         stored_password = pwd_rows.iloc[0]['Password']
                         is_new_user = False
+                
                 if is_new_user:
                     st.info("👋 歡迎新同學！請設定您的密碼。")
                     new_pwd = st.text_input("設定新密碼", type="password", autocomplete="new-password")
@@ -367,10 +333,8 @@ def login_page():
                                 else:
                                     dummy_entry = {'User': user_input.strip(), 'Password': new_pwd, 'Notebook': '預設筆記本', 'Word': 'Welcome', 'IPA': '', 'Chinese': '歡迎使用', 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
                                     df_new = pd.concat([df, pd.DataFrame([dummy_entry])], ignore_index=True)
-                                    st.session_state.df = df_new
-                                    save_to_google_sheet(df_new)
-                                login_placeholder.empty()
-                                st.rerun()
+                                    st.session_state.df = df_new; save_to_google_sheet(df_new)
+                                login_ph.empty(); st.rerun()
                             else: st.error("兩次密碼不符")
                         else: st.error("請輸入密碼")
                 else:
@@ -383,8 +347,7 @@ def login_page():
                             if (user_data['Password'] == "").any():
                                 df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
                                 save_to_google_sheet(df)
-                            login_placeholder.empty()
-                            st.rerun()
+                            login_ph.empty(); st.rerun()
                         else: st.error("密碼錯誤")
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
 
@@ -433,13 +396,11 @@ def main_app():
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("👀 翻譯", use_container_width=True):
-                    if w_in and not is_contains_chinese(w_in):
-                        try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
-                        except: st.error("翻譯失敗")
+                    try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(w_in)}")
+                    except: st.error("翻譯失敗")
             with c2:
                 if st.button("🔊 試聽", use_container_width=True):
-                    if w_in:
-                        st.markdown(get_audio_html(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                    if w_in: st.markdown(get_audio_html(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
@@ -456,30 +417,9 @@ def main_app():
                         except Exception as e: st.error(f"錯誤: {e}")
         
         elif input_type == "🚀 批次貼上":
-            st.info("💡 提示：請將其他來源產生的單字複製到下方。以逗號或換行分隔。")
-            bulk_in = st.text_area("📋 貼上單字區", height=150)
-            if st.button("🚀 批次加入", type="primary"):
-                if bulk_in and target_nb:
-                    words = re.split(r'[,\n，]', bulk_in)
-                    new_entries = []
-                    skipped_count = 0
-                    user_rows = df[df['User'] == current_user]
-                    user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
-                    for w in words:
-                        w = w.strip()
-                        if w and not is_contains_chinese(w):
-                            if check_duplicate(df, current_user, target_nb, w): skipped_count += 1
-                            else:
-                                try:
-                                    ipa = f"[{eng_to_ipa.convert(w)}]"
-                                    trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                                    new_entries.append({'User': current_user, 'Password': user_pwd, 'Notebook': target_nb, 'Word': w, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')})
-                                except: pass
-                    if new_entries:
-                        df_all = pd.concat([df_all, pd.DataFrame(new_entries)], ignore_index=True)
-                        st.session_state.df = df_all; save_to_google_sheet(df_all)
-                        st.success(f"✅ 成功加入 {len(new_entries)} 筆"); time.sleep(2); st.rerun()
-                    elif skipped_count > 0: st.warning(f"⚠️ 所有單字都重複了")
+            st.info("💡 提示：請將其他來源 (如 Gemini) 產生的單字複製到下方。")
+            bulk_in = st.text_area("📋 貼上單字區", height=150, key="ocr_editor")
+            if st.button("🚀 批次加入", type="primary", on_click=add_words_callback): pass
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
@@ -556,7 +496,7 @@ def main_app():
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
-                    # v40.1: 修正快取邏輯，確保每次 ID 不同
+                    # 使用 HTML 語法播放 (v32 邏輯)，這是你最滿意的版本
                     if st.button("🔊", key=f"p{i}"):
                         st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
@@ -607,7 +547,7 @@ def main_app():
                         if step == "英文": text = row['Word']; lang = 'en'
                         elif step == "中文": text = row['Chinese']; lang = 'zh-TW'; tld = 'com'
                         
-                        # 使用 v40.1 的分離快取機制，ID 永遠最新
+                        # 輪播：使用 v32 的 HTML 注入播放，並確保 ID 不重複
                         html_audio = get_audio_html(text, lang, tld, st.session_state.is_slow, autoplay=True, visible=False)
                         
                         with ph.container():
@@ -615,6 +555,7 @@ def main_app():
                             if step == "中文": html_content += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>"""
                             elif step == "英文": html_content += f"""<div style="color:#aaa;">Listening...</div>"""
                             html_content += "</div>"
+                            # 注入音訊
                             st.markdown(html_content + html_audio, unsafe_allow_html=True)
                         
                         time.sleep(delay)
@@ -636,6 +577,7 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
+            # 測驗模式：進入時自動播放 (HTML)
             st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
@@ -664,9 +606,11 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
+            # 手動重聽按鈕
             if st.button("🔊 重聽發音", use_container_width=True):
                 st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
             
+            # 剛進入時自動播放
             if not st.session_state.spell_checked and st.session_state.spell_input == "":
                  st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
