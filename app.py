@@ -13,19 +13,19 @@ import re
 import uuid
 import random
 
-# --- 安全引入 OCR 套件 (防當機設計) ---
+# --- 安全引入 OCR 套件 ---
 OCR_AVAILABLE = False
 try:
-    from PIL import Image, ImageEnhance, ImageFilter # 新增影像處理模組
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
     import pytesseract
     OCR_AVAILABLE = True
 except ImportError:
-    print("OCR 套件未安裝，將暫時停用照片掃描功能。")
+    print("OCR 套件未安裝。")
 
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-st.set_page_config(page_title="AI 智能單字速記通 (OCR強化版)", layout="wide", page_icon="🎓")
+st.set_page_config(page_title="AI 智能單字速記通 (v35.0)", layout="wide", page_icon="🎓")
 
 st.markdown("""
 <style>
@@ -87,6 +87,13 @@ st.markdown("""
         box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center;
         max-width: 500px; margin: 50px auto; border-top: 10px solid #4CAF50;
     }
+
+    /* 強制放大 Camera Input */
+    div[data-testid="stCameraInput"] video {
+        width: 100% !important;
+        height: auto !important;
+        border-radius: 15px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,14 +116,11 @@ def get_google_sheet_data():
             return pd.DataFrame(columns=cols)
         
         df = pd.DataFrame(data)
-        
         for c in cols:
-            if c not in df.columns:
-                df[c] = ""
+            if c not in df.columns: df[c] = ""
         
         df['User'] = df['User'].astype(str).str.strip()
         df = df.fillna("")
-        
         return df
     except Exception as e:
         st.error(f"資料庫連線錯誤：{e}")
@@ -131,9 +135,7 @@ def save_to_google_sheet(df):
         sheet = client.open("vocab_db").sheet1
         sheet.clear()
         
-        if 'User' in df.columns:
-            df['User'] = df['User'].astype(str).str.strip()
-            
+        if 'User' in df.columns: df['User'] = df['User'].astype(str).str.strip()
         cols = ['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date']
         for c in cols:
             if c not in df.columns: df[c] = ""
@@ -162,20 +164,33 @@ def to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
-# --- 影像增強功能 (讓 OCR 更準) ---
-def enhance_image_for_ocr(image):
+# --- 🔥 超級影像增強 (v35.0 核心) ---
+def super_enhance_image(image):
     """
-    對圖片進行灰階、對比增強和銳利化處理，提高 OCR 成功率
+    針對 OCR 進行暴力增強：
+    1. 轉灰階
+    2. 放大 2 倍 (讓小字變大)
+    3. 二值化 (只剩黑與白，去除陰影)
     """
-    # 1. 轉為灰階 (去除顏色干擾)
+    # 1. 轉灰階
     img = image.convert('L')
     
-    # 2. 增強對比度 (讓文字變黑，背景變白)
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.0) # 提高 2 倍對比度
+    # 2. 影像放大 (Upscaling) - Tesseract 喜歡大字
+    width, height = img.size
+    new_size = (width * 2, height * 2)
+    img = img.resize(new_size, Image.Resampling.LANCZOS)
     
-    # 3. 銳利化 (讓邊緣清晰)
+    # 3. 增強對比與銳利度
+    enhancer = ImageEnhance.Contrast(img)
+    img = enhancer.enhance(2.5) # 強烈對比
     img = img.filter(ImageFilter.SHARPEN)
+    
+    # 4. 二值化 (Binarization) - 自動閾值
+    # 這會把淺灰色的雜訊全部變成白色背景
+    img = ImageOps.autocontrast(img)
+    thresh = 128
+    fn = lambda x : 255 if x > thresh else 0
+    img = img.point(fn, mode='1')
     
     return img
 
@@ -403,9 +418,9 @@ def main_app():
         
         ocr_opts = ["🔤 單字輸入", "🚀 批次貼上"]
         if OCR_AVAILABLE:
-            ocr_opts.append("📷 拍照輸入")
-            ocr_opts.append("📂 上傳圖片")
-        else: st.warning("⚠️ OCR 套件未安裝或載入失敗，拍照/上傳功能暫停。")
+            ocr_opts.append("📷 專業拍照/上傳")
+            # ocr_opts.append("💻 視訊鏡頭 (電腦用)") # 隱藏舊的，因為手機上用上傳體驗更好
+        else: st.warning("⚠️ OCR 套件未安裝或載入失敗。")
         
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
@@ -481,62 +496,39 @@ def main_app():
                     elif skipped_count > 0:
                         st.warning(f"⚠️ 所有 {skipped_count} 筆單字都重複了，沒有新增任何資料。")
 
-        elif input_type == "📷 拍照輸入" and OCR_AVAILABLE:
-            st.info("💡 提示：請將英文單字置於畫面中央，避免反光")
-            camera_image = st.camera_input("點擊拍照")
-            if camera_image is not None:
-                try:
-                    image = Image.open(camera_image)
-                    # --- 影像處理 ---
-                    processed_img = enhance_image_for_ocr(image)
-                    
-                    with st.spinner("🔍 正在增強影像並辨識..."):
-                        # 設定 Tesseract 參數：假設是單一區塊文字 (psm 6)，並只辨識英文
-                        custom_config = r'--oem 3 --psm 6'
-                        text = pytesseract.image_to_string(processed_img, lang='eng', config=custom_config)
-                        
-                        # 顯示原始辨識結果供除錯
-                        with st.expander("查看原始辨識文字"):
-                            st.text(text)
-
-                        words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-                        unique_words = list(set(words))
-                        
-                        if unique_words:
-                            result_text = ", ".join(unique_words)
-                            st.text_area("辨識結果 (請複製到批次貼上使用)", value=result_text, height=150)
-                            st.success(f"成功辨識 {len(unique_words)} 個單字！")
-                        else:
-                            st.warning("畫面中沒看到清晰的英文單字，請重拍一張。")
-                except Exception as e:
-                    st.error(f"錯誤: {e}")
-
-        elif input_type == "📂 上傳圖片" and OCR_AVAILABLE:
-            st.info("💡 請上傳含有英文單字的圖片")
-            uploaded_file = st.file_uploader("上傳圖片", type=['png', 'jpg', 'jpeg'])
+        elif input_type == "📷 專業拍照/上傳" and OCR_AVAILABLE:
+            st.info("💡 **手機用戶請點選下方按鈕，選擇「相機」拍照可獲得最佳畫質** (支援對焦/縮放)")
+            
+            uploaded_file = st.file_uploader("點擊拍攝或上傳", type=['png', 'jpg', 'jpeg'], key="native_cam")
+            
             if uploaded_file is not None:
                 try:
                     image = Image.open(uploaded_file)
-                    st.image(image, caption='預覽', use_column_width=True)
-                    if st.button("🔍 辨識"):
-                        # --- 影像處理 ---
-                        processed_img = enhance_image_for_ocr(image)
-                        
-                        with st.spinner("🔍 正在增強影像並辨識..."):
-                            custom_config = r'--oem 3 --psm 6'
+                    st.image(image, caption='預覽 (已自動優化)', use_column_width=True)
+                    
+                    if st.button("🔍 智能辨識"):
+                        with st.spinner("🤖 正在進行 AI 影像增強與辨識..."):
+                            # 1. 超級影像增強
+                            processed_img = super_enhance_image(image)
+                            
+                            # 2. 執行 OCR (加上 psm 11 尋找稀疏文字)
+                            custom_config = r'--oem 3 --psm 11'
                             text = pytesseract.image_to_string(processed_img, lang='eng', config=custom_config)
                             
-                            with st.expander("查看原始辨識文字"):
+                            with st.expander("查看 AI 看到了什麼 (除錯用)"):
+                                st.image(processed_img, caption="AI 眼中的黑白影像")
                                 st.text(text)
 
+                            # 3. 萃取單字 (過濾掉亂碼，只留 3 個字母以上的字)
                             words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-                            unique_words = list(set(words))
+                            unique_words = sorted(list(set(words))) # 排序
+                            
                             if unique_words:
                                 result_text = ", ".join(unique_words)
+                                st.success(f"🎉 成功捕捉 {len(unique_words)} 個單字！")
                                 st.text_area("辨識結果 (請複製到批次貼上使用)", value=result_text, height=150)
-                                st.success(f"成功辨識 {len(unique_words)} 個單字！")
                             else:
-                                st.warning("沒看到單字")
+                                st.warning("😔 畫面中沒看到清晰的英文單字。建議：靠近一點、避開陰影、使用手機原生相機拍照。")
                 except Exception as e:
                     st.error(f"錯誤: {e}")
 
@@ -581,7 +573,7 @@ def main_app():
                     st.session_state.df = df_all; save_to_google_sheet(df_all); st.success("已刪除"); st.rerun()
         
         st.markdown("---")
-        st.caption("版本: v34.2 (Image Enhancement)")
+        st.caption("版本: v35.0 (Native Camera + Super OCR)")
 
     # 4. 主畫面控制區
     st.divider()
@@ -624,7 +616,7 @@ def main_app():
     if mode == 'list':
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
-                # 修改：調整欄位比例，讓垃圾桶往右靠，並加入翻譯按鈕
+                # 修改：調整欄位比例
                 c1, c2, c3, c4, c5 = st.columns([3, 2, 1, 1, 1])
                 
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
@@ -632,7 +624,6 @@ def main_app():
                 with c3: 
                     if st.button("🔊", key=f"p{i}"): st.markdown(text_to_speech_visible(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow), unsafe_allow_html=True)
                 with c4:
-                    # 新增：Google 翻譯外連按鈕
                     google_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
                     st.markdown(f'<a href="{google_url}" target="_blank" class="google-link" title="去 Google 翻譯查看">🌐 G</a>', unsafe_allow_html=True)
                 with c5:
