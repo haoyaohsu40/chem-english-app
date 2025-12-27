@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v41.1 (v32 Loop Restored)"
+VERSION = "v41.2 (Final Polish)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -500,6 +500,7 @@ def main_app():
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
+                    # v40.2 核心：回歸 HTML 播放器
                     if st.button("🔊", key=f"p{i}"):
                         st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
@@ -557,13 +558,14 @@ def main_app():
                         # 使用 HTML 隱藏播放
                         html_audio = get_audio_html(text, lang, tld, st.session_state.is_slow, autoplay=True, visible=False)
                         
-                        html_content = f"""<div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;margin-bottom:10px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:24px;margin-bottom:20px;">{row['IPA']}</div>"""
-                        if step == "中文": html_content += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>"""
-                        elif step == "英文": html_content += f"""<div style="color:#aaa;">Listening...</div>"""
-                        html_content += "</div>"
+                        with ph.container():
+                            html_content = f"""<div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;margin-bottom:10px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:24px;margin-bottom:20px;">{row['IPA']}</div>"""
+                            if step == "中文": html_content += f"""<div style="font-size:50px;color:#1565C0;font-weight:bold;">{row['Chinese']}</div>"""
+                            elif step == "英文": html_content += f"""<div style="color:#aaa;">Listening...</div>"""
+                            html_content += "</div>"
+                            # 注入音訊
+                            st.markdown(html_content + html_audio, unsafe_allow_html=True)
                         
-                        # 注入音訊
-                        ph.markdown(html_content + html_audio, unsafe_allow_html=True)
                         time.sleep(delay)
                 ph.success("輪播結束")
 
@@ -583,9 +585,9 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動播放按鈕 (v32 風格：使用 HTML)
+            # 修正：手動播放按鈕 (設為 visible=True)
             if st.button("🔊 播放題目發音", use_container_width=True):
-                st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
+                st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
@@ -613,10 +615,14 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動重聽按鈕 (v32 風格：使用 HTML)
+            # 修正：手動重聽按鈕 (設為 visible=True)
             if st.button("🔊 重聽發音", use_container_width=True):
-                st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
+                st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
             
+            # 剛進入時自動播放 (保持隱藏)
+            if not st.session_state.spell_checked and st.session_state.spell_input == "":
+                 st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
+
             if not st.session_state.spell_checked:
                 inp = st.text_input("輸入單字", key="spin")
                 if st.button("✅ 送出", type="primary"):
