@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
+from gtts import gTTS
 import base64
 from io import BytesIO
 from deep_translator import GoogleTranslator
@@ -11,13 +12,11 @@ import time
 import re
 import uuid
 import random
-import asyncio
-import edge_tts
 
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v42.0 (Neural Real Voice)"
+VERSION = "v43.0 (Speed Cache + Login Form)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -53,6 +52,7 @@ st.markdown("""
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
+    
     a.link-btn {
         text-decoration: none; display: inline-block; padding: 6px 10px;
         border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
@@ -138,55 +138,27 @@ def is_contains_chinese(string):
         if '\u4e00' <= char <= '\u9fff': return True
     return False
 
-# --- v42.0 真人語音核心 (Edge TTS) ---
-
-# 建立 Async 任務來執行 Edge TTS
-async def generate_edge_audio_async(text, voice):
-    communicate = edge_tts.Communicate(text, voice)
-    # 將音訊寫入記憶體 BytesIO
-    out = BytesIO()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            out.write(chunk["data"])
-    return out
-
-# 同步包裝函式 (Streamlit 預設是同步的)
+# --- v43.0 語音核心 (加入快取機制) ---
+# 這個函式負責「下載」音檔，我們把它快取起來 (Cache)
+# 只要參數 (text, lang) 一樣，第二次就不會再跑這段，直接回傳結果，速度極快！
 @st.cache_data(show_spinner=False)
-def get_edge_audio_base64(text, lang='en', slow=False):
-    if not text: return None
-    
-    # 選擇聲音模型
-    # 英文：en-US-AriaNeural (微軟標準女聲，非常自然)
-    # 中文：zh-TW-HsiaoChenNeural (台灣曉臻，自然女聲)
-    voice = "en-US-AriaNeural"
-    if lang == 'zh-TW' or is_contains_chinese(text):
-        voice = "zh-TW-HsiaoChenNeural"
-    
-    # 語速調整 (Edge TTS 使用百分比字串)
-    rate_str = "-20%" if slow else "+0%"
-    
-    # 由於 edge_tts 是非同步的，我們需要創建一個 loop 來執行它
+def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        # 注意：communicate 物件在建立時可以設定 rate，但 edge-tts python 庫目前對 rate 支援主要在 SSML，
-        # 簡單起見我們直接用預設語速，若要慢速可能需要 SSML 標籤，這裡先保持自然語速以求穩定。
-        # 若非常需要慢速，後續可改寫為 SSML。
-        
-        audio_io = loop.run_until_complete(generate_edge_audio_async(text, voice))
-        return base64.b64encode(audio_io.getvalue()).decode()
-    except Exception as e:
-        # 如果出錯 (例如連線問題)，回傳 None
-        print(f"Edge TTS Error: {e}")
-        return None
+        if not text: return None
+        # gTTS 下載 (最耗時的部分)
+        tts = gTTS(text=str(text), lang=lang, tld=tld, slow=slow)
+        fp = BytesIO()
+        tts.write_to_fp(fp)
+        return base64.b64encode(fp.getvalue()).decode()
+    except: return None
 
-# HTML 播放器生成 (沿用 v41.2 的穩定邏輯)
+# 這個函式負責「包裝 HTML」，每次都要執行以產生新 ID (不快取)
 def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visible=True):
-    # 注意：這裡的 tld 參數在 Edge TTS 中無用，保留是為了相容舊呼叫
-    b64 = get_edge_audio_base64(text, lang, slow)
+    # 這裡會去呼叫上面的快取函式
+    b64 = get_audio_base64(text, lang, tld, slow)
+    if not b64: return ""
     
-    if not b64: return "" # 如果生成失敗，回傳空字串
-    
+    # 每次生成新ID，保證瀏覽器重播
     rand_id = f"audio_{uuid.uuid4()}" 
     display_style = "display:none;" if (not visible) else "width: 100%; margin-top: 5px;"
     autoplay_attr = "autoplay" if autoplay else ""
@@ -198,13 +170,20 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
     """
 
 def generate_custom_audio(df, sequence, tld='com', slow=False):
-    # 批次下載 MP3 功能，暫時維持 gTTS 以免複雜化，或是可以移除此功能
-    # 為了穩定，這裡先回傳一個簡單提示，或者沿用 gTTS (需在 requirements 保留 gTTS 嗎？)
-    # 為了徹底移除 gTTS，這裡我們用 Edge TTS 實作，但不做複雜拼接，先暫時 disable 此功能
-    # 或者如果您非常需要下載 MP3，我們得保留 gTTS 僅供下載用。
-    # 為了 "Lite" 和 "Real Voice"，建議下載功能先暫停，或只用 gTTS 生成 (需加回 requirements)。
-    # 鑑於您上一版 requirements 移除了 gTTS，這裡我將此功能暫時註解並提示。
-    return None 
+    full_text = ""
+    for i, (index, row) in enumerate(df.iloc[::-1].iterrows(), start=1):
+        word = str(row['Word']); chinese = str(row['Chinese'])
+        full_text += f"Number {i}. " 
+        if not sequence: full_text += f"{word}. {chinese}. "
+        else:
+            for item in sequence:
+                if item == "英文": full_text += f"{word}. "
+                elif item == "中文": full_text += f"{chinese}. "
+        full_text += " ... "
+    tts = gTTS(text=full_text, lang='zh-TW', slow=slow)
+    fp = BytesIO()
+    tts.write_to_fp(fp)
+    return fp.getvalue()
 
 def add_to_mistake_notebook(row, user):
     df = st.session_state.df
@@ -336,50 +315,56 @@ def login_page():
     with login_ph.container():
         st.markdown("""<div class="login-container"><div class="welcome-text">歡迎來到</div><h1 class="login-title">🚀 AI 智能單字速記通 🎓</h1><p style="color: #666; font-size: 18px; margin-top: 20px;">請輸入您的帳號與密碼</p></div>""", unsafe_allow_html=True)
         df = st.session_state.df
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            user_input = st.text_input("學號 / 姓名 / 英文ID (皆可，下次請憑此登入)", placeholder="例如: s12345, 王小明, or Tony", key="login_user")
-            if user_input:
-                user_data = df[df['User'] == user_input.strip()]
-                is_new_user = True
-                stored_password = ""
-                if not user_data.empty:
-                    pwd_rows = user_data[user_data['Password'] != ""]
-                    if not pwd_rows.empty:
-                        stored_password = pwd_rows.iloc[0]['Password']
-                        is_new_user = False
+        
+        # --- 使用 st.form 來實現按 Enter 登入 ---
+        with st.form("login_form"):
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                user_input = st.text_input("學號 / 姓名 / 英文ID", placeholder="例如: s12345, 王小明, or Tony", key="login_user")
+                # 密碼欄位預設就會隱藏字元
+                pwd_input = st.text_input("密碼 (若新用戶請直接輸入新密碼)", type="password", autocomplete="current-password")
                 
-                if is_new_user:
-                    st.info("👋 歡迎新同學！請設定您的密碼。")
-                    new_pwd = st.text_input("設定新密碼", type="password", autocomplete="new-password")
-                    confirm_pwd = st.text_input("再次確認密碼", type="password", autocomplete="new-password")
-                    if st.button("🚀 註冊並登入", use_container_width=True, type="primary"):
-                        if new_pwd and confirm_pwd:
-                            if new_pwd == confirm_pwd:
-                                st.session_state.current_user = user_input.strip()
-                                st.session_state.logged_in = True
-                                if not user_data.empty:
-                                    df.loc[df['User'] == user_input.strip(), 'Password'] = new_pwd
-                                    save_to_google_sheet(df)
-                                else:
-                                    dummy_entry = {'User': user_input.strip(), 'Password': new_pwd, 'Notebook': '預設筆記本', 'Word': 'Welcome', 'IPA': '', 'Chinese': '歡迎使用', 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
-                                    df_new = pd.concat([df, pd.DataFrame([dummy_entry])], ignore_index=True)
-                                    st.session_state.df = df_new; save_to_google_sheet(df_new)
-                                login_ph.empty(); st.rerun()
-                            else: st.error("兩次密碼不符")
-                        else: st.error("請輸入密碼")
-                else:
-                    st.info("🔑 請輸入密碼登入")
-                    pwd_input = st.text_input("密碼", type="password", autocomplete="current-password")
-                    if st.button("🚀 登入系統", use_container_width=True, type="primary"):
-                        if pwd_input == stored_password:
+                # Form 的提交按鈕
+                submit_val = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True, type="primary")
+                
+                if submit_val:
+                    if user_input and pwd_input:
+                        user_data = df[df['User'] == user_input.strip()]
+                        is_new_user = True
+                        stored_password = ""
+                        
+                        if not user_data.empty:
+                            pwd_rows = user_data[user_data['Password'] != ""]
+                            if not pwd_rows.empty:
+                                stored_password = pwd_rows.iloc[0]['Password']
+                                is_new_user = False
+                        
+                        if is_new_user:
+                            # 註冊邏輯
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
-                            if (user_data['Password'] == "").any():
-                                df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
+                            if not user_data.empty:
+                                df.loc[df['User'] == user_input.strip(), 'Password'] = pwd_input
                                 save_to_google_sheet(df)
+                            else:
+                                dummy_entry = {'User': user_input.strip(), 'Password': pwd_input, 'Notebook': '預設筆記本', 'Word': 'Welcome', 'IPA': '', 'Chinese': '歡迎使用', 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
+                                df_new = pd.concat([df, pd.DataFrame([dummy_entry])], ignore_index=True)
+                                st.session_state.df = df_new; save_to_google_sheet(df_new)
                             login_ph.empty(); st.rerun()
-                        else: st.error("密碼錯誤")
+                        else:
+                            # 登入邏輯
+                            if pwd_input == stored_password:
+                                st.session_state.current_user = user_input.strip()
+                                st.session_state.logged_in = True
+                                if (user_data['Password'] == "").any():
+                                    df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
+                                    save_to_google_sheet(df)
+                                login_ph.empty(); st.rerun()
+                            else:
+                                st.error("密碼錯誤，請再試一次")
+                    else:
+                        st.error("請輸入帳號和密碼")
+
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
 
 def main_app():
@@ -433,7 +418,7 @@ def main_app():
             with c2:
                 if st.button("🔊 試聽", use_container_width=True):
                     if w_in:
-                        st.markdown(get_audio_html(w_in, 'en', slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                        st.markdown(get_audio_html(w_in, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
                 if w_in and target_nb:
@@ -456,8 +441,9 @@ def main_app():
 
         st.divider()
         with st.expander("🔊 發音與語速", expanded=False):
-            # 這裡移除了口音選擇，因為 Edge TTS 使用固定的高音質模型
-            st.caption("目前使用微軟神經網絡語音 (AI Human Voice)")
+            accents = {'美式 (US)': 'com', '英式 (UK)': 'co.uk', '澳式 (AU)': 'com.au', '印度 (IN)': 'co.in'}
+            curr_acc = [k for k, v in accents.items() if v == st.session_state.accent_tld][0]
+            st.session_state.accent_tld = accents[st.selectbox("口音", list(accents.keys()), index=list(accents.keys()).index(curr_acc))]
             speeds = {'正常': False, '慢速': True}
             curr_spd = [k for k, v in speeds.items() if v == st.session_state.is_slow][0]
             st.session_state.is_slow = speeds[st.radio("語速", list(speeds.keys()), index=list(speeds.keys()).index(curr_spd))]
@@ -502,7 +488,12 @@ def main_app():
             if not filtered_df.empty: st.download_button("📥 下載 Excel", to_excel(filtered_df), f"Vocab_{current_nb}.xlsx", use_container_width=True)
             else: st.button("📥 無資料", disabled=True, use_container_width=True)
         with t2:
-            st.button("🎵 製作 MP3 (維護中)", disabled=True, use_container_width=True)
+            if not filtered_df.empty and st.session_state.play_order:
+                if st.button("🎵 製作 MP3", use_container_width=True):
+                    with st.spinner("製作中..."):
+                        mp3 = generate_custom_audio(filtered_df, st.session_state.play_order, st.session_state.accent_tld, st.session_state.is_slow)
+                        st.download_button("⬇️ 下載 MP3", mp3, f"Audio_{current_nb}.mp3", "audio/mp3", use_container_width=True)
+            else: st.button("🎵 設定順序後下載", disabled=True, use_container_width=True)
 
     st.markdown("###")
     n1, n2, n3, n4, n5 = st.columns(5)
@@ -524,7 +515,7 @@ def main_app():
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
                 with c3: 
                     if st.button("🔊", key=f"p{i}"):
-                        st.markdown(get_audio_html(row['Word'], 'en', slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                        st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
                 with c4:
                     g_url = f"https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate"
@@ -556,7 +547,7 @@ def main_app():
                     if st.button("👀 看中文", use_container_width=True): st.info(f"{row['Chinese']}")
                 with b2: 
                     if st.button("🔊 聽發音", use_container_width=True): 
-                        st.markdown(get_audio_html(row['Word'], 'en', slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                        st.markdown(get_audio_html(row['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
         else: st.info("無單字")
 
     elif mode == 'slide':
@@ -567,14 +558,14 @@ def main_app():
             else:
                 for _, row in filtered_df.iloc[::-1].iterrows():
                     for step in st.session_state.play_order:
-                        ph.empty(); time.sleep(0.1) # 眨眼清空
-                        
+                        ph.empty(); time.sleep(0.1)
                         text = ""
                         lang = 'en'
+                        tld = st.session_state.accent_tld
                         if step == "英文": text = row['Word']; lang = 'en'
-                        elif step == "中文": text = row['Chinese']; lang = 'zh-TW'
+                        elif step == "中文": text = row['Chinese']; lang = 'zh-TW'; tld = 'com'
                         
-                        html_audio = get_audio_html(text, lang, slow=st.session_state.is_slow, autoplay=True, visible=False)
+                        html_audio = get_audio_html(text, lang, tld, st.session_state.is_slow, autoplay=True, visible=False)
                         
                         with ph.container():
                             html_content = f"""<div style="border:3px solid #4CAF50;border-radius:20px;padding:50px;text-align:center;background:#f0fdf4;min-height:350px;margin-bottom:10px;"><div style="font-size:60px;color:#2E7D32;font-weight:bold;">{row['Word']}</div><div style="color:#666;font-size:24px;margin-bottom:20px;">{row['IPA']}</div>"""
@@ -582,6 +573,7 @@ def main_app():
                             elif step == "英文": html_content += f"""<div style="color:#aaa;">Listening...</div>"""
                             html_content += "</div>"
                             st.markdown(html_content + html_audio, unsafe_allow_html=True)
+                        
                         time.sleep(delay)
                 ph.success("輪播結束")
 
@@ -601,9 +593,9 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動播放按鈕 (設為 visible=True)
+            # 手動播放按鈕 (visible=True)
             if st.button("🔊 播放題目發音", use_container_width=True):
-                st.markdown(get_audio_html(q['Word'], 'en', slow=st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
+                st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
 
             if not st.session_state.quiz_answered:
                 cols = st.columns(2)
@@ -631,13 +623,13 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動重聽按鈕 (設為 visible=True)
+            # 手動重聽按鈕 (visible=True)
             if st.button("🔊 重聽發音", use_container_width=True):
-                st.markdown(get_audio_html(sq['Word'], 'en', slow=st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
+                st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
             
             # 剛進入時自動播放 (保持隱藏)
             if not st.session_state.spell_checked and st.session_state.spell_input == "":
-                 st.markdown(get_audio_html(sq['Word'], 'en', slow=st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
+                 st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
             if not st.session_state.spell_checked:
                 inp = st.text_input("輸入單字", key="spin")
