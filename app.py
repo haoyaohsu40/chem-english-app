@@ -145,6 +145,7 @@ def is_contains_chinese(string):
     return False
 
 # --- 語音核心 (快取優化) ---
+# 注意：這裡不設 TTL，讓快取在 App 執行期間一直有效，大幅提升重複播放速度
 @st.cache_data(show_spinner=False)
 def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
@@ -326,12 +327,15 @@ def login_page():
                         user_data = df[df['User'] == user_input.strip()]
                         is_new_user = True
                         stored_password = ""
+                        
                         if not user_data.empty:
                             pwd_rows = user_data[user_data['Password'] != ""]
                             if not pwd_rows.empty:
                                 stored_password = pwd_rows.iloc[0]['Password']
                                 is_new_user = False
+                        
                         if is_new_user:
+                            # 註冊
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
                             if not user_data.empty:
@@ -343,6 +347,7 @@ def login_page():
                                 st.session_state.df = df_new; save_to_google_sheet(df_new)
                             login_ph.empty(); st.rerun()
                         else:
+                            # 登入
                             if pwd_input == stored_password:
                                 st.session_state.current_user = user_input.strip()
                                 st.session_state.logged_in = True
@@ -350,8 +355,10 @@ def login_page():
                                     df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
                                     save_to_google_sheet(df)
                                 login_ph.empty(); st.rerun()
-                            else: st.error("密碼錯誤，請再試一次")
-                    else: st.error("請輸入帳號和密碼")
+                            else:
+                                st.error("密碼錯誤，請再試一次")
+                    else:
+                        st.error("請輸入帳號和密碼")
 
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
 
@@ -381,9 +388,19 @@ def main_app():
     # --- 恢復大字體 ---
     c_m1, c_m2 = st.columns(2)
     with c_m1:
-        st.markdown(f"""<div class="metric-card"><div class="metric-label">☁️ 雲端總字數</div><div class="metric-value">{len(df)}</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;">
+            <div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">☁️ 雲端總字數</div>
+            <div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
     with c_m2:
-        st.markdown(f"""<div class="metric-card"><div class="metric-label">📖 目前本子字數</div><div class="metric-value">{len(filtered_df)}</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;">
+            <div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">📖 目前本子字數</div>
+            <div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(filtered_df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with st.sidebar:
         st.info(f"👤 目前使用者：**{current_user}**")
