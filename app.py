@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v43.0 (Speed Cache + Login Form)"
+VERSION = "v44.0 (UI/UX Polish)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -25,6 +25,8 @@ st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="w
 st.markdown("""
 <style>
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    
+    /* 標題區塊 */
     .title-container {
         text-align: center; padding: 20px 0 40px 0;
         background: linear-gradient(to bottom, #ffffff, #f8f9fa);
@@ -38,21 +40,21 @@ st.markdown("""
         margin: 0; padding: 0; font-family: 'Arial Black', sans-serif;
     }
     .sub-title { font-size: 16px; color: #78909c; margin-top: 8px; font-weight: 600; letter-spacing: 1.5px; }
-    .metric-card {
-        background: #ffffff; border-left: 6px solid #4CAF50; border-radius: 12px;
-        padding: 15px 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        margin-bottom: 10px; transition: transform 0.2s;
-    }
+
+    /* 按鈕樣式 */
     .stButton>button { 
         border-radius: 12px; font-weight: bold; border: none;
         box-shadow: 0 4px 6px rgba(0,0,0,0.08); transition: all 0.2s;
         font-size: 18px !important; padding: 12px 20px; height: auto;
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
+    
+    /* 單字列表樣式 */
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
     
+    /* 連結按鈕 */
     a.link-btn {
         text-decoration: none; display: inline-block; padding: 6px 10px;
         border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
@@ -61,6 +63,7 @@ st.markdown("""
     a.google-btn { background-color: #f1f3f4; color: #1a73e8; border-color: #dadce0; }
     a.yahoo-btn { background-color: #f3e5f5; color: #720e9e; border-color: #e1bee7; }
 
+    /* 測驗與拼字 */
     .quiz-card {
         background-color: #fff8e1; padding: 40px; border-radius: 20px;
         text-align: center; border: 4px dashed #ffb74d; margin-bottom: 20px;
@@ -68,6 +71,7 @@ st.markdown("""
     .quiz-word { font-size: 60px; font-weight: 900; color: #1565C0; margin: 20px 0; }
     .mistake-mode { border: 4px solid #ef5350 !important; background-color: #ffebee !important; }
     
+    /* 登入框 */
     .login-container {
         background-color: white; padding: 60px; border-radius: 25px;
         box-shadow: 0 15px 35px rgba(0,0,0,0.1); text-align: center;
@@ -138,31 +142,24 @@ def is_contains_chinese(string):
         if '\u4e00' <= char <= '\u9fff': return True
     return False
 
-# --- v43.0 語音核心 (加入快取機制) ---
-# 這個函式負責「下載」音檔，我們把它快取起來 (Cache)
-# 只要參數 (text, lang) 一樣，第二次就不會再跑這段，直接回傳結果，速度極快！
+# --- 語音核心 (快取優化) ---
+# 注意：這裡不設 TTL，讓快取在 App 執行期間一直有效，大幅提升重複播放速度
 @st.cache_data(show_spinner=False)
 def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
         if not text: return None
-        # gTTS 下載 (最耗時的部分)
         tts = gTTS(text=str(text), lang=lang, tld=tld, slow=slow)
         fp = BytesIO()
         tts.write_to_fp(fp)
         return base64.b64encode(fp.getvalue()).decode()
     except: return None
 
-# 這個函式負責「包裝 HTML」，每次都要執行以產生新 ID (不快取)
 def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visible=True):
-    # 這裡會去呼叫上面的快取函式
     b64 = get_audio_base64(text, lang, tld, slow)
     if not b64: return ""
-    
-    # 每次生成新ID，保證瀏覽器重播
     rand_id = f"audio_{uuid.uuid4()}" 
     display_style = "display:none;" if (not visible) else "width: 100%; margin-top: 5px;"
     autoplay_attr = "autoplay" if autoplay else ""
-    
     return f"""
     <audio id="{rand_id}" controls {autoplay_attr} style="{display_style}">
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
@@ -316,16 +313,15 @@ def login_page():
         st.markdown("""<div class="login-container"><div class="welcome-text">歡迎來到</div><h1 class="login-title">🚀 AI 智能單字速記通 🎓</h1><p style="color: #666; font-size: 18px; margin-top: 20px;">請輸入您的帳號與密碼</p></div>""", unsafe_allow_html=True)
         df = st.session_state.df
         
-        # --- 使用 st.form 來實現按 Enter 登入 ---
+        # --- 使用 Form 來支援 Enter 鍵登入 ---
         with st.form("login_form"):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 user_input = st.text_input("學號 / 姓名 / 英文ID", placeholder="例如: s12345, 王小明, or Tony", key="login_user")
-                # 密碼欄位預設就會隱藏字元
-                pwd_input = st.text_input("密碼 (若新用戶請直接輸入新密碼)", type="password", autocomplete="current-password")
+                pwd_input = st.text_input("密碼 (若新用戶請設定新密碼)", type="password", autocomplete="current-password")
                 
-                # Form 的提交按鈕
-                submit_val = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True, type="primary")
+                # Form 提交按鈕
+                submit_val = st.form_submit_button("🚀 登入 / 註冊", type="primary", use_container_width=True)
                 
                 if submit_val:
                     if user_input and pwd_input:
@@ -340,7 +336,7 @@ def login_page():
                                 is_new_user = False
                         
                         if is_new_user:
-                            # 註冊邏輯
+                            # 註冊
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
                             if not user_data.empty:
@@ -352,7 +348,7 @@ def login_page():
                                 st.session_state.df = df_new; save_to_google_sheet(df_new)
                             login_ph.empty(); st.rerun()
                         else:
-                            # 登入邏輯
+                            # 登入
                             if pwd_input == stored_password:
                                 st.session_state.current_user = user_input.strip()
                                 st.session_state.logged_in = True
@@ -361,7 +357,7 @@ def login_page():
                                     save_to_google_sheet(df)
                                 login_ph.empty(); st.rerun()
                             else:
-                                st.error("密碼錯誤，請再試一次")
+                                st.error("密碼錯誤")
                     else:
                         st.error("請輸入帳號和密碼")
 
@@ -390,9 +386,22 @@ def main_app():
     current_nb = st.session_state.filter_nb_key
     filtered_df = df if current_nb == "全部" else df[df['Notebook'] == current_nb]
     
+    # 使用 Inline Style 強制放大字體，解決變小問題
     c_m1, c_m2 = st.columns(2)
-    with c_m1: st.markdown(f"""<div class="metric-card"><div class="metric-label">☁️ 雲端總字數</div><div class="metric-value">{len(df)}</div></div>""", unsafe_allow_html=True)
-    with c_m2: st.markdown(f"""<div class="metric-card"><div class="metric-label">📖 目前本子字數</div><div class="metric-value">{len(filtered_df)}</div></div>""", unsafe_allow_html=True)
+    with c_m1:
+        st.markdown(f"""
+        <div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;">
+            <div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">☁️ 雲端總字數</div>
+            <div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c_m2:
+        st.markdown(f"""
+        <div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;">
+            <div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">📖 目前本子字數</div>
+            <div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(filtered_df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     with st.sidebar:
         st.info(f"👤 目前使用者：**{current_user}**")
@@ -558,7 +567,8 @@ def main_app():
             else:
                 for _, row in filtered_df.iloc[::-1].iterrows():
                     for step in st.session_state.play_order:
-                        ph.empty(); time.sleep(0.1)
+                        ph.empty() 
+                        time.sleep(0.1)
                         text = ""
                         lang = 'en'
                         tld = st.session_state.accent_tld
@@ -573,7 +583,6 @@ def main_app():
                             elif step == "英文": html_content += f"""<div style="color:#aaa;">Listening...</div>"""
                             html_content += "</div>"
                             st.markdown(html_content + html_audio, unsafe_allow_html=True)
-                        
                         time.sleep(delay)
                 ph.success("輪播結束")
 
@@ -593,7 +602,6 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if q_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">選出正確中文 (答錯自動加入錯題本)</div><div class="quiz-word">{q['Word']}</div><div>{q['IPA']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動播放按鈕 (visible=True)
             if st.button("🔊 播放題目發音", use_container_width=True):
                 st.markdown(get_audio_html(q['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
 
@@ -623,11 +631,9 @@ def main_app():
             card_cls = "quiz-card mistake-mode" if s_mode == "🔥 錯題本" else "quiz-card"
             st.markdown(f"""<div class="{card_cls}"><div style="color:#555;">聽發音輸入英文 (答錯自動加入錯題本)</div><div style="font-size:18px;color:#666;">(中文意思)</div><div style="font-size:36px;color:#1565C0;font-weight:bold;margin:10px 0;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            # 手動重聽按鈕 (visible=True)
             if st.button("🔊 重聽發音", use_container_width=True):
                 st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=True), unsafe_allow_html=True)
             
-            # 剛進入時自動播放 (保持隱藏)
             if not st.session_state.spell_checked and st.session_state.spell_input == "":
                  st.markdown(get_audio_html(sq['Word'], 'en', st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
 
