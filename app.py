@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v45.1 (Mobile Title Fix & List Sort)"
+VERSION = "v46.0 (Clean Duplicates)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -36,7 +36,6 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
     
-    /* 電腦版預設標題 */
     .main-title {
         font-size: 42px; font-weight: 900;
         background: -webkit-linear-gradient(45deg, #1565C0, #42A5F5);
@@ -44,24 +43,15 @@ st.markdown("""
         margin: 0; padding: 0; font-family: 'Arial Black', sans-serif;
     }
     
-    /* 登入畫面標題 */
-    .login-title { 
-        color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; 
-        white-space: nowrap; /* 電腦版不換行 */
-    }
-
-    /* --- 📱 手機版專用樣式 (強制換行修正) --- */
+    /* 手機版樣式修正 */
     @media (max-width: 600px) {
         .login-title { 
             font-size: 32px !important; 
-            white-space: normal !important; /* 強制換行 */
+            white-space: normal !important;
             word-wrap: break-word !important;
             line-height: 1.4 !important;
         }
-        .main-title { 
-            font-size: 28px !important; 
-            white-space: normal !important;
-        }
+        .main-title { font-size: 28px !important; white-space: normal !important; }
         .sub-title { font-size: 14px !important; }
         .metric-value { font-size: 32px !important; }
         .login-container { padding: 30px 20px !important; }
@@ -157,9 +147,15 @@ def save_to_google_sheet(df):
         get_google_sheet_data.clear()
     except Exception as e: st.error(f"儲存失敗：{e}")
 
+# --- 強化的重複檢查函式 ---
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
-    mask = (df['User'] == str(user).strip()) & (df['Notebook'] == notebook) & (df['Word'].str.lower() == str(word).lower().strip())
+    # 嚴格比對：去除前後空白、轉小寫
+    mask = (
+        (df['User'].astype(str).str.strip() == str(user).strip()) & 
+        (df['Notebook'].astype(str).str.strip() == str(notebook).strip()) & 
+        (df['Word'].astype(str).str.strip().str.lower() == str(word).strip().lower())
+    )
     return not df[mask].empty
 
 def to_excel(df):
@@ -279,9 +275,9 @@ def add_words_callback():
     if new_entries:
         df_all = pd.concat([df, pd.DataFrame(new_entries)], ignore_index=True)
         st.session_state.df = df_all; save_to_google_sheet(df_all)
-        st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！"
+        st.session_state.msg_success = f"✅ 成功加入 {len(new_entries)} 筆單字！(已略過 {skipped} 筆重複)"
         st.session_state.ocr_editor = ""
-    elif skipped > 0: st.session_state.msg_warning = "⚠️ 所有單字都重複了！"
+    elif skipped > 0: st.session_state.msg_warning = f"⚠️ 所有 {skipped} 筆單字都重複了！"
     else: st.session_state.msg_warning = "⚠️ 沒有有效的英文單字可加入。"
 
 def next_question(df):
@@ -381,7 +377,7 @@ def login_page():
                                     df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
                                     save_to_google_sheet(df)
                                 login_ph.empty(); st.rerun()
-                            else: st.error("密碼錯誤")
+                            else: st.error("密碼錯誤，請再試一次")
                     else: st.error("請輸入帳號和密碼")
 
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
@@ -400,8 +396,8 @@ def main_app():
     else: df_all['User'] = df_all['User'].astype(str).str.strip()
     df = df_all[(df_all['User'] == current_user) | (df_all['User'] == "") | (df_all['User'] == "nan")]
 
-    # 手機版快速輸入
     st.markdown(f"""<div class="title-container"><h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1><div class="sub-title">歡迎回來，{current_user}！</div></div>""", unsafe_allow_html=True)
+    
     with st.expander("📝 快速新增單字 (手機專用)", expanded=False):
         c1, c2 = st.columns([2, 1])
         with c1: quick_word = st.text_input("輸入英文單字", key="quick_in")
@@ -422,19 +418,9 @@ def main_app():
     
     c_m1, c_m2 = st.columns(2)
     with c_m1:
-        st.markdown(f"""
-        <div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;">
-            <div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">☁️ 雲端總字數</div>
-            <div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(df)}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;"><div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">☁️ 雲端總字數</div><div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(df)}</div></div>""", unsafe_allow_html=True)
     with c_m2:
-        st.markdown(f"""
-        <div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;">
-            <div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">📖 目前本子字數</div>
-            <div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(filtered_df)}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div style="background:white; border-left: 6px solid #4CAF50; padding: 20px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.08); text-align: center;"><div style="font-size:18px; color:#546e7a; font-weight:bold; margin-bottom:5px;">📖 目前本子字數</div><div style="font-size:42px; color:#2e7d32; font-weight:800; line-height:1.2;">{len(filtered_df)}</div></div>""", unsafe_allow_html=True)
 
     with st.sidebar:
         st.info(f"👤 目前使用者：**{current_user}**")
@@ -445,7 +431,6 @@ def main_app():
         nb_mode = st.radio("筆記本來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed")
         target_nb = st.selectbox("選擇筆記本", notebooks, key="target_nb_key") if nb_mode == "選擇現有" else st.text_input("輸入新筆記本名稱", "我的單字本", key="target_nb_key")
         st.divider()
-        
         ocr_opts = ["🔤 單字輸入", "🚀 批次貼上"]
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
@@ -477,7 +462,7 @@ def main_app():
                         except Exception as e: st.error(f"錯誤: {e}")
         
         elif input_type == "🚀 批次貼上":
-            st.info("💡 提示：請將其他來源 (如 Gemini) 產生的單字複製到下方。")
+            st.info("💡 提示：單字之間請用空格、逗號或換行分隔。")
             bulk_in = st.text_area("📋 貼上單字區", height=150, key="ocr_editor")
             if st.button("🚀 批次加入", type="primary", on_click=add_words_callback): pass
 
@@ -550,14 +535,41 @@ def main_app():
     mode = st.session_state.current_mode
 
     if mode == 'list':
-        # --- v45.1 新增：列表排序 ---
-        sort_mode = st.radio("排序方式", ["依加入時間 (新→舊)", "依字母順序 (A→Z)"], horizontal=True)
-        
+        # --- 排序選單與移除重複按鈕 ---
+        c_sort, c_clean = st.columns([3, 1])
+        with c_sort:
+            sort_mode = st.radio("排序方式", ["依加入時間 (新→舊)", "依字母順序 (A→Z)"], horizontal=True)
+        with c_clean:
+            st.write(""); st.write("") # 排版用 Spacer
+            if st.button("🗑️ 移除本子重複字", type="secondary", use_container_width=True):
+                # 執行移除重複邏輯
+                current_nb_rows = df_all[(df_all['User'] == current_user) & (df_all['Notebook'] == current_nb)]
+                if not current_nb_rows.empty:
+                    # 找出重複的 (保留第一筆)
+                    # 先建立一個用來判斷的小寫欄位
+                    temp_df = current_nb_rows.copy()
+                    temp_df['word_lower'] = temp_df['Word'].astype(str).str.strip().str.lower()
+                    
+                    # 找出哪些是重複的 (duplicated 返回 True 代表是重複的第二筆以後)
+                    dupes = temp_df.duplicated(subset=['word_lower'], keep='first')
+                    indices_to_drop = temp_df[dupes].index
+                    
+                    if not indices_to_drop.empty:
+                        df_all = df_all.drop(indices_to_drop)
+                        st.session_state.df = df_all
+                        save_to_google_sheet(df_all)
+                        st.success(f"已移除 {len(indices_to_drop)} 個重複單字！")
+                        time.sleep(1); st.rerun()
+                    else:
+                        st.info("👍 此筆記本沒有重複單字")
+                else:
+                    st.warning("此筆記本是空的")
+
         display_df = filtered_df.copy()
         if sort_mode == "依字母順序 (A→Z)":
             display_df = display_df.sort_values(by='Word', key=lambda col: col.str.lower())
         else:
-            display_df = display_df.iloc[::-1] # 預設：新到舊
+            display_df = display_df.iloc[::-1]
 
         if not display_df.empty:
             for i, row in display_df.iterrows():
