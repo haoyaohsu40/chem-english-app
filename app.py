@@ -14,13 +14,13 @@ import uuid
 import random
 
 # ==========================================
-# 1. Page Config
+# 1. 頁面設定
 # ==========================================
-VERSION = "v47.1 (Restore Buttons & Strict Check)"
+VERSION = "v47.2 (Button Fix & Strict Logic)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
-# 2. CSS Styles
+# 2. CSS 樣式
 # ==========================================
 st.markdown("""
 <style>
@@ -104,7 +104,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. Core Functions
+# 2. 核心功能
 # ==========================================
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -146,15 +146,15 @@ def save_to_google_sheet(df):
         get_google_sheet_data.clear()
     except Exception as e: st.error(f"儲存失敗：{e}")
 
-# --- STRICT Check Duplicate ---
+# --- 嚴格重複檢查 (針對 Session State DataFrame) ---
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
-    # Normalize inputs for comparison: strip whitespace and convert to lowercase
+    # 統一轉字串、去空白、轉小寫
     user_str = str(user).strip()
     nb_str = str(notebook).strip()
     word_str = str(word).strip().lower()
     
-    # Create normalized columns for comparison (temporary)
+    # 使用臨時欄位進行比對，確保精確
     temp_df = df.copy()
     temp_df['norm_user'] = temp_df['User'].astype(str).str.strip()
     temp_df['norm_nb'] = temp_df['Notebook'].astype(str).str.strip()
@@ -178,7 +178,7 @@ def is_contains_chinese(string):
         if '\u4e00' <= char <= '\u9fff': return True
     return False
 
-# --- Audio Core ---
+# --- 語音核心 (v32 邏輯 + Cache) ---
 @st.cache_data(show_spinner=False)
 def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
@@ -230,7 +230,7 @@ def add_to_mistake_notebook(row, user):
     return False
 
 # ==========================================
-# 4. Session State Initialization
+# 4. 狀態初始化
 # ==========================================
 
 def initialize_session_state():
@@ -261,8 +261,39 @@ def initialize_session_state():
     
     if 'editing_idx' not in st.session_state: st.session_state.editing_idx = None
     
-    # Input state for sidebar form
+    # 用於單字輸入的狀態
     if 'input_word' not in st.session_state: st.session_state.input_word = ""
+
+# --- 核心邏輯：提交單字 ---
+def submit_single_word():
+    """處理單字提交的邏輯，供 Enter 鍵和按鈕共用"""
+    w_in = st.session_state.input_word
+    target_nb = st.session_state.target_nb_key
+    current_user = st.session_state.current_user
+    df = st.session_state.df
+    
+    if w_in and target_nb:
+        # 嚴格重複檢查
+        if check_duplicate(df, current_user, target_nb, w_in):
+            st.session_state.msg_warning = f"⚠️ 單字 '{w_in}' 已經存在！"
+            st.session_state.input_word = "" # 清空輸入框
+        else:
+            try:
+                user_rows = df[df['User'] == current_user]
+                user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
+                ipa = f"[{eng_to_ipa.convert(w_in)}]"
+                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w_in)
+                new = {'User': current_user, 'Password': user_pwd, 'Notebook': target_nb, 'Word': w_in, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
+                
+                # 更新 DataFrame
+                df_new = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+                st.session_state.df = df_new
+                save_to_google_sheet(df_new)
+                
+                st.session_state.msg_success = f"✅ 已儲存：{w_in}"
+                st.session_state.input_word = "" # 清空輸入框
+            except Exception as e:
+                st.session_state.msg_warning = f"錯誤: {e}"
 
 def add_words_callback():
     final_text = st.session_state.ocr_editor
@@ -344,7 +375,7 @@ def check_spelling():
             if add_to_mistake_notebook(st.session_state.spell_current, st.session_state.current_user): st.toast(f"已加入錯題本: {st.session_state.spell_current['Word']}", icon="🔥")
 
 # ==========================================
-# 5. Main Layout
+# 5. 主程式 Layout
 # ==========================================
 
 def login_page():
@@ -449,45 +480,25 @@ def main_app():
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
         if input_type == "🔤 單字輸入":
-            # --- Use form to prevent duplicates and enable Enter key submission ---
-            with st.form("single_add_form", clear_on_submit=True):
-                w_in = st.text_input("輸入英文單字", placeholder="例如: Valve", key="input_word")
-                # Submit button inside the form
-                submitted = st.form_submit_button("➕ 加入單字庫", type="primary", use_container_width=True)
-                
-                if submitted:
-                    if w_in and target_nb:
-                        # Strict Duplicate Check
-                        if check_duplicate(df, current_user, target_nb, w_in):
-                            st.warning(f"⚠️ 單字 '{w_in}' 已經存在！")
-                        else:
-                            # Add word logic
-                            try:
-                                user_rows = df[df['User'] == current_user]
-                                user_pwd = user_rows.iloc[0]['Password'] if not user_rows.empty else ""
-                                ipa = f"[{eng_to_ipa.convert(w_in)}]"
-                                trans = GoogleTranslator(source='auto', target='zh-TW').translate(w_in)
-                                new = {'User': current_user, 'Password': user_pwd, 'Notebook': target_nb, 'Word': w_in, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
-                                df_all = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
-                                st.session_state.df = df_all; save_to_google_sheet(df_all)
-                                st.success(f"已儲存：{w_in}")
-                                time.sleep(0.5)
-                                st.rerun()
-                            except Exception as e: st.error(f"錯誤: {e}")
-
-            # --- Restore Translate and Audio Buttons (Outside Form) ---
-            # Using session_state to persist input for buttons
-            current_input = st.session_state.get("input_word", "")
+            # --- 修正：移除 Form，改用 Callback 實現 Enter 提交，並恢復按鈕功能 ---
+            w_in = st.text_input("輸入英文單字 (按 Enter 加入)", placeholder="例如: Valve", key="input_word", on_change=submit_single_word)
+            
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("👀 翻譯", use_container_width=True):
-                    if current_input and not is_contains_chinese(current_input):
-                        try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(current_input)}")
+                    val = st.session_state.input_word
+                    if val and not is_contains_chinese(val):
+                        try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(val)}")
                         except: st.error("翻譯失敗")
             with c2:
                 if st.button("🔊 試聽", use_container_width=True):
-                    if current_input:
-                        st.markdown(get_audio_html(current_input, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+                    val = st.session_state.input_word
+                    if val:
+                        st.markdown(get_audio_html(val, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
+
+            if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
+                submit_single_word() # 呼叫共用邏輯
+                st.rerun()
 
         elif input_type == "🚀 批次貼上":
             st.info("💡 提示：單字之間請用空格、逗號或換行分隔。")
@@ -591,7 +602,7 @@ def main_app():
 
         if not display_df.empty:
             for i, row in display_df.iterrows():
-                # Edit and Display logic
+                # 修改版面：加入編輯功能
                 c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 0.5, 1, 1, 0.5])
                 
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
