@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v47.2 (Button Fix & Strict Logic)"
+VERSION = "v47.3 (Stable Buttons Fix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -146,7 +146,7 @@ def save_to_google_sheet(df):
         get_google_sheet_data.clear()
     except Exception as e: st.error(f"儲存失敗：{e}")
 
-# --- 嚴格重複檢查 (針對 Session State DataFrame) ---
+# --- 嚴格重複檢查 (轉小寫 + 去空白) ---
 def check_duplicate(df, user, notebook, word):
     if df.empty: return False
     # 統一轉字串、去空白、轉小寫
@@ -154,7 +154,7 @@ def check_duplicate(df, user, notebook, word):
     nb_str = str(notebook).strip()
     word_str = str(word).strip().lower()
     
-    # 使用臨時欄位進行比對，確保精確
+    # 使用臨時欄位進行比對
     temp_df = df.copy()
     temp_df['norm_user'] = temp_df['User'].astype(str).str.strip()
     temp_df['norm_nb'] = temp_df['Notebook'].astype(str).str.strip()
@@ -266,7 +266,8 @@ def initialize_session_state():
 
 # --- 核心邏輯：提交單字 ---
 def submit_single_word():
-    """處理單字提交的邏輯，供 Enter 鍵和按鈕共用"""
+    """處理單字提交的邏輯"""
+    # 這裡的 key 必須對應 st.text_input 的 key
     w_in = st.session_state.input_word
     target_nb = st.session_state.target_nb_key
     current_user = st.session_state.current_user
@@ -276,7 +277,7 @@ def submit_single_word():
         # 嚴格重複檢查
         if check_duplicate(df, current_user, target_nb, w_in):
             st.session_state.msg_warning = f"⚠️ 單字 '{w_in}' 已經存在！"
-            st.session_state.input_word = "" # 清空輸入框
+            # 注意：這裡不清空 input_word，讓使用者知道哪個字重複
         else:
             try:
                 user_rows = df[df['User'] == current_user]
@@ -291,7 +292,7 @@ def submit_single_word():
                 save_to_google_sheet(df_new)
                 
                 st.session_state.msg_success = f"✅ 已儲存：{w_in}"
-                st.session_state.input_word = "" # 清空輸入框
+                st.session_state.input_word = "" # 成功後清空
             except Exception as e:
                 st.session_state.msg_warning = f"錯誤: {e}"
 
@@ -480,24 +481,27 @@ def main_app():
         input_type = st.radio("輸入模式", ocr_opts, horizontal=True)
 
         if input_type == "🔤 單字輸入":
-            # --- 修正：移除 Form，改用 Callback 實現 Enter 提交，並恢復按鈕功能 ---
-            w_in = st.text_input("輸入英文單字 (按 Enter 加入)", placeholder="例如: Valve", key="input_word", on_change=submit_single_word)
+            # --- v47.3 修正：移除 Form，改回一般 Text Input 但移除 on_change，避免誤觸 ---
+            w_in = st.text_input("輸入英文單字", placeholder="例如: Valve", key="input_word")
             
             c1, c2 = st.columns(2)
             with c1:
+                # 翻譯按鈕：只讀取，不加入
                 if st.button("👀 翻譯", use_container_width=True):
                     val = st.session_state.input_word
                     if val and not is_contains_chinese(val):
                         try: st.info(f"{GoogleTranslator(source='auto', target='zh-TW').translate(val)}")
                         except: st.error("翻譯失敗")
             with c2:
+                # 試聽按鈕：只讀取，不加入
                 if st.button("🔊 試聽", use_container_width=True):
                     val = st.session_state.input_word
                     if val:
                         st.markdown(get_audio_html(val, 'en', tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
 
+            # 加入按鈕：唯一加入途徑
             if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
-                submit_single_word() # 呼叫共用邏輯
+                submit_single_word()
                 st.rerun()
 
         elif input_type == "🚀 批次貼上":
@@ -602,7 +606,7 @@ def main_app():
 
         if not display_df.empty:
             for i, row in display_df.iterrows():
-                # 修改版面：加入編輯功能
+                # Edit and Display logic
                 c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 0.5, 1, 1, 0.5])
                 
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
