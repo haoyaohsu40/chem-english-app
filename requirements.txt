@@ -6,3 +6,5 @@ gTTS
 deep-translator
 eng-to-ipa
 openpyxl
+Pillow
+pytesseract
