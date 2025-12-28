@@ -16,21 +16,23 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v44.2 (Secure UI & Fix)"
+VERSION = "v45.0 (Slide Sort + Toolbar Back)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
-# 2. CSS 樣式 (強力隱藏工具列)
+# 2. CSS 樣式
 # ==========================================
 st.markdown("""
 <style>
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     
-    /* --- 隱藏 Streamlit 預設介面 --- */
-    #MainMenu {visibility: hidden;} /* 隱藏右上角三條線 */
-    footer {visibility: hidden;}    /* 隱藏底部 'Made with Streamlit' */
-    header {visibility: hidden;}    /* 隱藏頂部彩色橫條與 Deploy 按鈕 */
-    [data-testid="stToolbar"] {visibility: hidden;} /* 強制隱藏工具列 */
+    /* 修正：不再隱藏 header 與 toolbar，讓使用者可以按 Stop 停止輪播
+       只隱藏 footer 與漢堡選單 (如果需要)
+    */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    /* header {visibility: hidden;}  <-- 移除這行，找回停止按鈕 */
+    /* [data-testid="stToolbar"] {visibility: hidden;} <-- 移除這行 */
 
     .title-container {
         text-align: center; padding: 20px 0 40px 0;
@@ -340,7 +342,6 @@ def login_page():
                                 is_new_user = False
                         
                         if is_new_user:
-                            # 註冊
                             st.session_state.current_user = user_input.strip()
                             st.session_state.logged_in = True
                             if not user_data.empty:
@@ -352,7 +353,6 @@ def login_page():
                                 st.session_state.df = df_new; save_to_google_sheet(df_new)
                             login_ph.empty(); st.rerun()
                         else:
-                            # 登入
                             if pwd_input == stored_password:
                                 st.session_state.current_user = user_input.strip()
                                 st.session_state.logged_in = True
@@ -564,15 +564,30 @@ def main_app():
         else: st.info("無單字")
 
     elif mode == 'slide':
+        # --- v45.0 新增：排序工具 ---
+        st.markdown("#### ⚙️ 輪播設定")
+        c_sort, c_space = st.columns([2, 1])
+        with c_sort:
+            sort_opt = st.radio("排序方式", ["依輸入順序 (預設)", "依字母順序 (A-Z)", "隨機亂數播放"], horizontal=True)
+        
+        # 根據選擇重新排序
+        target_df = filtered_df.copy()
+        if sort_opt == "依字母順序 (A-Z)":
+            target_df = target_df.sort_values(by='Word', key=lambda col: col.str.lower())
+        elif sort_opt == "隨機亂數播放":
+            target_df = target_df.sample(frac=1)
+        
         delay = st.slider("每張卡片停留秒數", 2, 8, 3)
         ph = st.empty()
+        
         if st.button("▶️ 開始輪播", type="primary"):
             if not st.session_state.play_order: st.error("請先設定播放順序")
             else:
-                for _, row in filtered_df.iloc[::-1].iterrows():
+                # 使用排序後的 target_df 進行輪播
+                for _, row in target_df.iterrows():
                     for step in st.session_state.play_order:
-                        ph.empty() 
-                        time.sleep(0.1)
+                        ph.empty(); time.sleep(0.1) # 眨眼清空
+                        
                         text = ""
                         lang = 'en'
                         tld = st.session_state.accent_tld
