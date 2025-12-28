@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v45.0 (Slide Sort + Toolbar Back)"
+VERSION = "v45.1 (Mobile Title Fix & List Sort)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
@@ -26,13 +26,8 @@ st.markdown("""
 <style>
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     
-    /* 修正：不再隱藏 header 與 toolbar，讓使用者可以按 Stop 停止輪播
-       只隱藏 footer 與漢堡選單 (如果需要)
-    */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    /* header {visibility: hidden;}  <-- 移除這行，找回停止按鈕 */
-    /* [data-testid="stToolbar"] {visibility: hidden;} <-- 移除這行 */
 
     .title-container {
         text-align: center; padding: 20px 0 40px 0;
@@ -40,15 +35,40 @@ st.markdown("""
         border-radius: 20px; margin-bottom: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
+    
+    /* 電腦版預設標題 */
     .main-title {
         font-size: 42px; font-weight: 900;
         background: -webkit-linear-gradient(45deg, #1565C0, #42A5F5);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         margin: 0; padding: 0; font-family: 'Arial Black', sans-serif;
     }
+    
+    /* 登入畫面標題 */
+    .login-title { 
+        color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; 
+        white-space: nowrap; /* 電腦版不換行 */
+    }
+
+    /* --- 📱 手機版專用樣式 (強制換行修正) --- */
+    @media (max-width: 600px) {
+        .login-title { 
+            font-size: 32px !important; 
+            white-space: normal !important; /* 強制換行 */
+            word-wrap: break-word !important;
+            line-height: 1.4 !important;
+        }
+        .main-title { 
+            font-size: 28px !important; 
+            white-space: normal !important;
+        }
+        .sub-title { font-size: 14px !important; }
+        .metric-value { font-size: 32px !important; }
+        .login-container { padding: 30px 20px !important; }
+    }
+
     .sub-title { font-size: 16px; color: #78909c; margin-top: 8px; font-weight: 600; letter-spacing: 1.5px; }
 
-    /* --- 數據卡片 (維持大字體) --- */
     .metric-card {
         background: #ffffff; border-left: 6px solid #4CAF50; border-radius: 12px;
         padding: 15px 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -63,6 +83,7 @@ st.markdown("""
         font-size: 18px !important; padding: 12px 20px; height: auto;
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
+    
     .word-text { font-size: 28px; font-weight: bold; color: #2E7D32; font-family: 'Arial Black', sans-serif; }
     .ipa-text { font-size: 18px; color: #757575; }
     .meaning-text { font-size: 24px; color: #1565C0; font-weight: bold;}
@@ -88,7 +109,7 @@ st.markdown("""
         max-width: 800px; margin: 50px auto; border-top: 12px solid #4CAF50;
     }
     .welcome-text { font-size: 28px; color: #666; margin-bottom: 10px; font-weight: bold; }
-    .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; white-space: nowrap; }
+    .login-title { color: #2E7D32; margin-top: 0; font-size: 48px; font-weight: 900; }
     .version-tag { position: fixed; bottom: 10px; left: 15px; color: #aaa; font-size: 14px; font-family: monospace; }
 </style>
 """, unsafe_allow_html=True)
@@ -152,7 +173,7 @@ def is_contains_chinese(string):
         if '\u4e00' <= char <= '\u9fff': return True
     return False
 
-# --- 語音核心 (快取優化) ---
+# --- 語音核心 (v32 邏輯 + Cache) ---
 @st.cache_data(show_spinner=False)
 def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
@@ -360,10 +381,8 @@ def login_page():
                                     df.loc[df['User'] == user_input.strip(), 'Password'] = stored_password
                                     save_to_google_sheet(df)
                                 login_ph.empty(); st.rerun()
-                            else:
-                                st.error("密碼錯誤，請再試一次")
-                    else:
-                        st.error("請輸入帳號和密碼")
+                            else: st.error("密碼錯誤")
+                    else: st.error("請輸入帳號和密碼")
 
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
 
@@ -381,7 +400,18 @@ def main_app():
     else: df_all['User'] = df_all['User'].astype(str).str.strip()
     df = df_all[(df_all['User'] == current_user) | (df_all['User'] == "") | (df_all['User'] == "nan")]
 
-    st.markdown(f"""<div class="title-container"><h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1><div class="sub-title">歡迎回來，{current_user}！ • 您的專屬學習空間</div></div>""", unsafe_allow_html=True)
+    # 手機版快速輸入
+    st.markdown(f"""<div class="title-container"><h1 class="main-title">🚀 AI 智能單字速記通 🎓</h1><div class="sub-title">歡迎回來，{current_user}！</div></div>""", unsafe_allow_html=True)
+    with st.expander("📝 快速新增單字 (手機專用)", expanded=False):
+        c1, c2 = st.columns([2, 1])
+        with c1: quick_word = st.text_input("輸入英文單字", key="quick_in")
+        with c2: 
+            st.write(""); st.write("")
+            if st.button("➕ 加入", type="primary", use_container_width=True):
+                if quick_word:
+                    st.session_state.ocr_editor = quick_word
+                    st.session_state.target_nb_key = st.session_state.get('target_nb_key', '預設筆記本')
+                    add_words_callback(); st.rerun()
 
     notebooks = df['Notebook'].unique().tolist()
     if "🔥 錯題本 (Auto)" not in notebooks: notebooks.append("🔥 錯題本 (Auto)")
@@ -390,7 +420,6 @@ def main_app():
     current_nb = st.session_state.filter_nb_key
     filtered_df = df if current_nb == "全部" else df[df['Notebook'] == current_nb]
     
-    # --- 恢復大字體 ---
     c_m1, c_m2 = st.columns(2)
     with c_m1:
         st.markdown(f"""
@@ -521,8 +550,17 @@ def main_app():
     mode = st.session_state.current_mode
 
     if mode == 'list':
-        if not filtered_df.empty:
-            for i, row in filtered_df.iloc[::-1].iterrows():
+        # --- v45.1 新增：列表排序 ---
+        sort_mode = st.radio("排序方式", ["依加入時間 (新→舊)", "依字母順序 (A→Z)"], horizontal=True)
+        
+        display_df = filtered_df.copy()
+        if sort_mode == "依字母順序 (A→Z)":
+            display_df = display_df.sort_values(by='Word', key=lambda col: col.str.lower())
+        else:
+            display_df = display_df.iloc[::-1] # 預設：新到舊
+
+        if not display_df.empty:
+            for i, row in display_df.iterrows():
                 c1, c2, c3, c4, c5 = st.columns([3, 2, 1, 1, 1])
                 with c1: st.markdown(f"<div class='word-text'>{row['Word']}</div><div class='ipa-text'>{row['IPA']}</div>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<div class='meaning-text'>{row['Chinese']}</div>", unsafe_allow_html=True)
@@ -564,13 +602,11 @@ def main_app():
         else: st.info("無單字")
 
     elif mode == 'slide':
-        # --- v45.0 新增：排序工具 ---
         st.markdown("#### ⚙️ 輪播設定")
         c_sort, c_space = st.columns([2, 1])
         with c_sort:
             sort_opt = st.radio("排序方式", ["依輸入順序 (預設)", "依字母順序 (A-Z)", "隨機亂數播放"], horizontal=True)
         
-        # 根據選擇重新排序
         target_df = filtered_df.copy()
         if sort_opt == "依字母順序 (A-Z)":
             target_df = target_df.sort_values(by='Word', key=lambda col: col.str.lower())
@@ -583,11 +619,9 @@ def main_app():
         if st.button("▶️ 開始輪播", type="primary"):
             if not st.session_state.play_order: st.error("請先設定播放順序")
             else:
-                # 使用排序後的 target_df 進行輪播
                 for _, row in target_df.iterrows():
                     for step in st.session_state.play_order:
-                        ph.empty(); time.sleep(0.1) # 眨眼清空
-                        
+                        ph.empty(); time.sleep(0.1)
                         text = ""
                         lang = 'en'
                         tld = st.session_state.accent_tld
