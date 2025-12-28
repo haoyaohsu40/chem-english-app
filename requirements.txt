@@ -2,7 +2,7 @@ streamlit
 pandas
 gspread
 oauth2client
-edge-tts
+gTTS
 deep-translator
 eng-to-ipa
 openpyxl
