@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面設定與 CSS 樣式
 # ==========================================
-VERSION = "v37.5 (Lite)"
+VERSION = "v43.0 (Lite)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 st.markdown("""
@@ -776,3 +776,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
