@@ -16,16 +16,22 @@ import random
 # ==========================================
 # 1. 頁面設定
 # ==========================================
-VERSION = "v44.1 (Fix Error & Font)"
+VERSION = "v44.2 (Secure UI & Fix)"
 st.set_page_config(page_title=f"AI 智能單字速記通 ({VERSION})", layout="wide", page_icon="🎓")
 
 # ==========================================
-# 2. CSS 樣式
+# 2. CSS 樣式 (強力隱藏工具列)
 # ==========================================
 st.markdown("""
 <style>
     .main { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
     
+    /* --- 隱藏 Streamlit 預設介面 --- */
+    #MainMenu {visibility: hidden;} /* 隱藏右上角三條線 */
+    footer {visibility: hidden;}    /* 隱藏底部 'Made with Streamlit' */
+    header {visibility: hidden;}    /* 隱藏頂部彩色橫條與 Deploy 按鈕 */
+    [data-testid="stToolbar"] {visibility: hidden;} /* 強制隱藏工具列 */
+
     .title-container {
         text-align: center; padding: 20px 0 40px 0;
         background: linear-gradient(to bottom, #ffffff, #f8f9fa);
@@ -40,7 +46,7 @@ st.markdown("""
     }
     .sub-title { font-size: 16px; color: #78909c; margin-top: 8px; font-weight: 600; letter-spacing: 1.5px; }
 
-    /* --- 數據卡片 (恢復大字體) --- */
+    /* --- 數據卡片 (維持大字體) --- */
     .metric-card {
         background: #ffffff; border-left: 6px solid #4CAF50; border-radius: 12px;
         padding: 15px 10px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -145,7 +151,6 @@ def is_contains_chinese(string):
     return False
 
 # --- 語音核心 (快取優化) ---
-# 注意：這裡不設 TTL，讓快取在 App 執行期間一直有效，大幅提升重複播放速度
 @st.cache_data(show_spinner=False)
 def get_audio_base64(text, lang='en', tld='com', slow=False):
     try:
