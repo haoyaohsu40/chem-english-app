@@ -1,15 +1,23 @@
+import streamlit as st
+import streamlit.components.v1 as components
+
+# 設定頁面配置
+st.set_page_config(page_title="單字學習卡", layout="wide")
+
+# 將 HTML/CSS/JS 程式碼包在一個 Python 字串變數中
+html_code = """
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>單字學習卡 - 修正版</title>
+    <title>單字學習卡</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
             --primary-color: #4a90e2;
-            --bg-color: #f5f7fa;
-            --card-bg: #ffffff;
+            --bg-color: #ffffff;
+            --card-bg: #f8f9fa;
             --text-color: #333;
             --border-radius: 12px;
         }
@@ -19,14 +27,14 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             display: flex;
             justify-content: center;
         }
 
         .container {
             width: 100%;
-            max-width: 800px; /* 稍微加寬以容納橫向排列 */
+            /* max-width: 800px; 配合 Streamlit 寬度 */
             background-color: var(--card-bg);
             border-radius: var(--border-radius);
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
@@ -36,7 +44,7 @@
             gap: 15px;
         }
 
-        /* --- 修正點 1 & 5: 頂部區域與統計數據 --- */
+        /* 1. 設定與下載同一排 */
         .header-top {
             display: flex;
             justify-content: space-between;
@@ -47,19 +55,20 @@
             padding-bottom: 10px;
         }
 
+        /* 5. 統計數據同一排 */
         .stats-container {
             display: flex;
-            gap: 20px; /* 讓兩個統計數據分開一點但同一排 */
+            gap: 20px;
             font-size: 0.9em;
             color: #666;
-            background: #f0f0f0;
+            background: #e9ecef;
             padding: 5px 15px;
             border-radius: 20px;
         }
 
         .header-controls {
             display: flex;
-            gap: 10px; /* 設定與下載按鈕之間的間距 */
+            gap: 10px;
         }
 
         .btn {
@@ -79,14 +88,14 @@
         .btn-danger { background-color: #dc3545; color: white; }
         .btn:hover { opacity: 0.9; }
 
-        /* --- 修正點 7: 輸入區塊 --- */
+        /* 7. 輸入區塊 */
         .input-group {
             display: flex;
             gap: 10px;
             background: #eef2f7;
             padding: 15px;
             border-radius: var(--border-radius);
-            flex-wrap: wrap; /* 手機版自動換行 */
+            flex-wrap: wrap;
         }
 
         .input-group input {
@@ -97,7 +106,7 @@
             min-width: 150px;
         }
 
-        /* --- 修正點 4: 導航分頁平均分散 --- */
+        /* 4. 導航分頁平均分散 */
         .nav-tabs {
             display: flex;
             width: 100%;
@@ -106,13 +115,13 @@
         }
 
         .nav-tab {
-            flex: 1; /* 每一個分頁佔據相同寬度 */
+            flex: 1;
             text-align: center;
             padding: 10px 5px;
             cursor: pointer;
             color: #666;
             transition: 0.3s;
-            white-space: nowrap; /* 防止文字換行 */
+            white-space: nowrap;
         }
 
         .nav-tab.active {
@@ -121,11 +130,10 @@
             font-weight: bold;
         }
 
-        /* 內容顯示區 */
         .content-section { display: none; }
         .content-section.active { display: block; }
 
-        /* --- 修正點 2 & 3: 列表模式排版 --- */
+        /* 2 & 3. 列表模式排版 */
         .word-list {
             list-style: none;
             padding: 0;
@@ -134,7 +142,7 @@
 
         .word-item {
             display: flex;
-            justify-content: space-between; /* 左右推開 */
+            justify-content: space-between;
             align-items: center;
             padding: 12px;
             border-bottom: 1px solid #eee;
@@ -143,28 +151,26 @@
         .word-info {
             display: flex;
             align-items: center;
-            gap: 10px; /* 單字、音標、中文之間的間距 */
-            flex-wrap: nowrap; /* 強制不換行 */
+            gap: 15px;
+            flex-wrap: nowrap;
             overflow: hidden;
-            flex: 1; /* 佔據左側剩餘空間 */
+            flex: 1;
         }
 
-        .word-text { font-weight: bold; color: var(--primary-color); font-size: 1.1em; }
-        .word-phonetic { color: #888; font-family: 'Arial', sans-serif; font-size: 0.9em; }
-        .word-meaning { color: #333; }
+        .word-text { font-weight: bold; color: var(--primary-color); font-size: 1.1em; min-width: 80px; }
+        .word-phonetic { color: #888; font-family: 'Arial', sans-serif; font-size: 0.9em; min-width: 80px;}
+        .word-meaning { color: #333; flex-grow: 1; }
         
-        /* 確保中文不會掉下去，如果太長顯示... */
         .word-meaning span {
              white-space: nowrap;
              overflow: hidden;
              text-overflow: ellipsis;
         }
 
-        /* 修正點 3: 操作按鈕同一排 */
         .word-actions {
             display: flex;
-            gap: 8px; /* 按鈕間距 */
-            flex-shrink: 0; /* 防止按鈕被壓縮 */
+            gap: 10px;
+            flex-shrink: 0;
         }
 
         .action-btn {
@@ -186,10 +192,11 @@
             border-radius: 20px;
             margin-top: 20px;
             position: relative;
+            background: white;
         }
         .card-word { font-size: 2.5em; margin-bottom: 10px; color: var(--primary-color); }
         .card-phonetic { font-size: 1.2em; color: #888; margin-bottom: 20px; }
-        .card-meaning { font-size: 1.5em; font-weight: bold; display: none; } /* 預設隱藏中文 */
+        .card-meaning { font-size: 1.5em; font-weight: bold; display: none; }
         .card-display.show-meaning .card-meaning { display: block; }
 
         /* 輪播模式 */
@@ -215,7 +222,6 @@
             gap: 10px;
             justify-content: center;
         }
-
     </style>
 </head>
 <body>
@@ -236,10 +242,10 @@
     </div>
 
     <div class="input-group">
-        <input type="text" id="newWord" placeholder="輸入英文單字 (例如: apple)">
-        <input type="text" id="newMeaning" placeholder="輸入中文意思 (例如: 蘋果)">
+        <input type="text" id="newWord" placeholder="輸入英文單字">
+        <input type="text" id="newMeaning" placeholder="輸入中文意思">
         <button class="btn btn-primary" onclick="addWord()">加入單字</button>
-        <button class="btn btn-secondary" onclick="batchAdd()">拼次加入(批量)</button>
+        <button class="btn btn-secondary" onclick="batchAdd()">拼次加入</button>
     </div>
 
     <div class="nav-tabs">
@@ -251,8 +257,7 @@
     </div>
 
     <div id="tab-list" class="content-section active">
-        <ul class="word-list" id="wordListContainer">
-            </ul>
+        <ul class="word-list" id="wordListContainer"></ul>
     </div>
 
     <div id="tab-card" class="content-section">
@@ -276,36 +281,34 @@
         </div>
         <div class="carousel-controls">
             <button class="btn btn-primary" id="btnStartCarousel" onclick="toggleCarousel()">開始輪播</button>
-            <label style="display:flex; align-items:center; gap:5px;">
+            <label style="display:flex; align-items:center; gap:5px; color: #333;">
                 <input type="checkbox" id="carouselSound" checked> 開啟聲音
             </label>
         </div>
     </div>
 
     <div id="tab-quiz" class="content-section">
-        <p>測驗功能區 (待實作)</p>
+        <p style="text-align:center;">測驗功能區 (待實作)</p>
     </div>
     
     <div id="tab-spelling" class="content-section">
-        <p>拼字功能區 (待實作)</p>
+        <p style="text-align:center;">拼字功能區 (待實作)</p>
     </div>
 
 </div>
 
 <script>
-    // 模擬資料數據
     let words = [
-        { word: 'Apple', phonetic: '/ˈæp.l̩/', meaning: '蘋果' },
-        { word: 'Banana', phonetic: '/bəˈnæn.ə/', meaning: '香蕉' },
-        { word: 'Computer', phonetic: '/kəmˈpjuː.tər/', meaning: '電腦' },
-        { word: 'Elephant', phonetic: '/ˈel.ɪ.fənt/', meaning: '大象' }
+        { word: 'Polymer', phonetic: '/ˈpɒl.ɪ.mər/', meaning: '聚合物' },
+        { word: 'Extrusion', phonetic: '/ɪkˈstruː.ʒən/', meaning: '擠出成型' },
+        { word: 'Pellet', phonetic: '/ˈpel.ɪt/', meaning: '塑膠粒' },
+        { word: 'Safety', phonetic: '/ˈseɪf.ti/', meaning: '安全' }
     ];
 
     let currentCardIndex = 0;
     let carouselInterval;
     let isCarouselPlaying = false;
 
-    // 初始化
     function init() {
         updateStats();
         renderList();
@@ -313,27 +316,24 @@
     }
 
     function updateStats() {
-        // 修正 5: 更新統計數字
-        document.getElementById('cloudCount').textContent = `☁️ 雲端總數: ${words.length * 15}`; // 模擬數據
+        document.getElementById('cloudCount').textContent = `☁️ 雲端總數: ${words.length * 15}`;
         document.getElementById('localCount').textContent = `📖 本子字數: ${words.length}`;
     }
 
     function switchTab(tabName) {
         document.querySelectorAll('.content-section').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
-        
         document.getElementById(`tab-${tabName}`).classList.add('active');
-        // 找到對應的 tab 按鈕並加 active (簡單邏輯)
+        
         const tabs = ['list', 'card', 'carousel', 'quiz', 'spelling'];
-        document.querySelectorAll('.nav-tab')[tabs.indexOf(tabName)].classList.add('active');
+        const index = tabs.indexOf(tabName);
+        if(index >= 0) document.querySelectorAll('.nav-tab')[index].classList.add('active');
 
-        // 如果離開輪播頁面，停止輪播
         if (tabName !== 'carousel' && isCarouselPlaying) {
             toggleCarousel();
         }
     }
 
-    // --- 修正 2 & 3: 列表渲染 ---
     function renderList() {
         const list = document.getElementById('wordListContainer');
         list.innerHTML = '';
@@ -370,11 +370,6 @@
         }
     }
 
-    function batchAdd() {
-        alert('請輸入格式：單字,中文 (換行區隔)');
-        // 這裡可以跳出一個 modal 讓使用者貼上大量文字
-    }
-
     function deleteWord(index) {
         if(confirm('確定刪除?')) {
             words.splice(index, 1);
@@ -383,14 +378,12 @@
     }
 
     function speak(text) {
-        window.speechSynthesis.cancel(); // 停止目前的發音
+        window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = 'en-US';
-        utterance.rate = 0.8; // 稍微慢一點
         window.speechSynthesis.speak(utterance);
     }
 
-    // --- 卡片功能 ---
     function updateCard() {
         if(words.length === 0) return;
         const item = words[currentCardIndex];
@@ -413,70 +406,59 @@
         if(words.length > 0) speak(words[currentCardIndex].word);
     }
 
-    // --- 修正 6: 輪播功能 (包含聲音) ---
     let carouselIndex = 0;
-    
     function toggleCarousel() {
         const btn = document.getElementById('btnStartCarousel');
         if (isCarouselPlaying) {
-            // 停止
             clearInterval(carouselInterval);
             isCarouselPlaying = false;
             btn.textContent = "開始輪播";
             btn.classList.remove('btn-danger');
             btn.classList.add('btn-primary');
         } else {
-            // 開始
             if(words.length === 0) { alert('沒有單字可輪播'); return; }
             isCarouselPlaying = true;
             btn.textContent = "停止輪播";
             btn.classList.remove('btn-primary');
             btn.classList.add('btn-danger');
-            
-            runCarouselStep(); // 立即執行一次
-            carouselInterval = setInterval(runCarouselStep, 3500); // 每 3.5 秒切換
+            runCarouselStep();
+            carouselInterval = setInterval(runCarouselStep, 3500);
         }
     }
 
     function runCarouselStep() {
         const item = words[carouselIndex];
-        const wEl = document.getElementById('carouselWord');
+        document.getElementById('carouselWord').textContent = item.word;
         const mEl = document.getElementById('carouselMeaning');
-        const soundEnabled = document.getElementById('carouselSound').checked;
-
-        // 1. 顯示單字
-        wEl.textContent = item.word;
         mEl.textContent = item.meaning;
-        mEl.classList.remove('visible'); // 先隱藏中文
+        mEl.classList.remove('visible');
 
-        // 2. 發音 (如果開啟)
-        if(soundEnabled) {
+        if(document.getElementById('carouselSound').checked) {
             speak(item.word);
         }
 
-        // 3. 延遲顯示中文 (模擬學習效果)
-        setTimeout(() => {
-            mEl.classList.add('visible');
-        }, 1500);
-
-        // 準備下一個
+        setTimeout(() => { mEl.classList.add('visible'); }, 1500);
         carouselIndex = (carouselIndex + 1) % words.length;
     }
 
     function downloadData() {
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(words));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "vocabulary.json");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr);
+        anchor.setAttribute("download", "vocabulary.json");
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
     }
 
-    // 啟動
+    function batchAdd() { alert('批量加入功能開發中'); }
+
     init();
-
 </script>
-
 </body>
 </html>
+"""
+
+# 在 Streamlit 中渲染 HTML
+# height 設定高一點以免內容被截斷
+components.html(html_code, height=850, scrolling=True)
