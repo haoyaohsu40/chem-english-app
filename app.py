@@ -1,10 +1,11 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# 設定頁面配置
+# 設定頁面配置 (必須是第一行指令)
 st.set_page_config(page_title="單字學習卡", layout="wide")
 
 # 將 HTML/CSS/JS 程式碼包在一個 Python 字串變數中
+# 我已經針對手機版面優化了 CSS，防止按鈕亂跑
 html_code = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -27,100 +28,106 @@ html_code = """
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 10px;
+            padding: 5px; /* 手機版減少邊距 */
             display: flex;
             justify-content: center;
         }
 
         .container {
             width: 100%;
-            /* max-width: 800px; 配合 Streamlit 寬度 */
+            /* max-width: 800px; 配合 Streamlit */
             background-color: var(--card-bg);
             border-radius: var(--border-radius);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 15px;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
         }
 
-        /* 1. 設定與下載同一排 */
+        /* --- 修正 1. 設定與下載同一排 (手機版優化) --- */
         .header-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
+            flex-wrap: nowrap; /* 強制不換行 */
+            gap: 5px;
             border-bottom: 1px solid #eee;
             padding-bottom: 10px;
         }
 
-        /* 5. 統計數據同一排 */
+        .header-title {
+            font-size: 1.2em;
+            margin: 0;
+            white-space: nowrap;
+        }
+
+        /* --- 修正 5. 統計數據同一排 --- */
         .stats-container {
             display: flex;
-            gap: 20px;
-            font-size: 0.9em;
+            gap: 10px;
+            font-size: 0.8em; /* 字體縮小以適應手機 */
             color: #666;
             background: #e9ecef;
-            padding: 5px 15px;
-            border-radius: 20px;
+            padding: 5px 10px;
+            border-radius: 15px;
+            white-space: nowrap;
         }
 
         .header-controls {
             display: flex;
-            gap: 10px;
+            gap: 5px;
         }
 
         .btn {
             border: none;
-            padding: 8px 16px;
+            padding: 6px 12px; /* 按鈕縮小一點 */
             border-radius: 6px;
             cursor: pointer;
-            transition: background 0.2s;
-            font-size: 0.9em;
+            font-size: 0.85em;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 4px;
+            white-space: nowrap; /* 防止按鈕文字換行 */
         }
 
         .btn-primary { background-color: var(--primary-color); color: white; }
         .btn-secondary { background-color: #6c757d; color: white; }
         .btn-danger { background-color: #dc3545; color: white; }
-        .btn:hover { opacity: 0.9; }
 
-        /* 7. 輸入區塊 */
+        /* --- 修正 7. 輸入區塊 (防止手機版破圖) --- */
         .input-group {
             display: flex;
-            gap: 10px;
+            gap: 5px;
             background: #eef2f7;
-            padding: 15px;
+            padding: 10px;
             border-radius: var(--border-radius);
-            flex-wrap: wrap;
+            flex-wrap: wrap; /* 允許換行，因為輸入框太長 */
         }
 
         .input-group input {
             flex: 1;
-            padding: 10px;
+            padding: 8px;
             border: 1px solid #ddd;
             border-radius: 6px;
-            min-width: 150px;
+            min-width: 120px;
         }
 
-        /* 4. 導航分頁平均分散 */
+        /* --- 修正 4. 導航分頁平均分散 --- */
         .nav-tabs {
             display: flex;
             width: 100%;
             border-bottom: 2px solid #ddd;
-            margin-bottom: 10px;
+            margin-bottom: 5px;
         }
 
         .nav-tab {
             flex: 1;
             text-align: center;
-            padding: 10px 5px;
+            padding: 8px 2px;
             cursor: pointer;
             color: #666;
-            transition: 0.3s;
+            font-size: 0.9em;
             white-space: nowrap;
         }
 
@@ -133,7 +140,7 @@ html_code = """
         .content-section { display: none; }
         .content-section.active { display: block; }
 
-        /* 2 & 3. 列表模式排版 */
+        /* --- 修正 2 & 3. 列表模式 (關鍵修正：解決手機版亂掉的問題) --- */
         .word-list {
             list-style: none;
             padding: 0;
@@ -142,35 +149,49 @@ html_code = """
 
         .word-item {
             display: flex;
+            align-items: center; /* 垂直置中 */
             justify-content: space-between;
-            align-items: center;
-            padding: 12px;
+            padding: 10px 0;
             border-bottom: 1px solid #eee;
+            gap: 5px;
         }
 
+        /* 讓文字資訊區塊佔據大部分空間 */
         .word-info {
             display: flex;
             align-items: center;
-            gap: 15px;
-            flex-wrap: nowrap;
-            overflow: hidden;
-            flex: 1;
+            gap: 8px;
+            flex: 1; /* 吃掉剩餘空間 */
+            min-width: 0; /* 關鍵：防止文字撐爆容器 */
         }
 
-        .word-text { font-weight: bold; color: var(--primary-color); font-size: 1.1em; min-width: 80px; }
-        .word-phonetic { color: #888; font-family: 'Arial', sans-serif; font-size: 0.9em; min-width: 80px;}
-        .word-meaning { color: #333; flex-grow: 1; }
+        .word-text { 
+            font-weight: bold; 
+            color: var(--primary-color); 
+            font-size: 1em; 
+            white-space: nowrap; /* 單字不換行 */
+        }
         
-        .word-meaning span {
-             white-space: nowrap;
-             overflow: hidden;
-             text-overflow: ellipsis;
+        .word-phonetic { 
+            color: #888; 
+            font-family: 'Arial', sans-serif; 
+            font-size: 0.8em; 
+            white-space: nowrap; /* 音標不換行 */
+        }
+        
+        .word-meaning { 
+            color: #333; 
+            font-size: 0.9em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis; /* 中文太長顯示... */
         }
 
+        /* 操作按鈕區塊 */
         .word-actions {
             display: flex;
-            gap: 10px;
-            flex-shrink: 0;
+            gap: 5px; /* 按鈕靠緊一點 */
+            flex-shrink: 0; /* 防止按鈕被壓縮 */
         }
 
         .action-btn {
@@ -178,49 +199,48 @@ html_code = """
             border: none;
             cursor: pointer;
             color: #666;
-            font-size: 1.1em;
+            font-size: 1em; /* 圖示大小適中 */
             padding: 4px;
         }
         .action-btn:hover { color: var(--primary-color); }
         .action-btn.delete:hover { color: #dc3545; }
 
-        /* 卡片模式 */
+        /* --- 卡片與輪播 --- */
         .card-display {
             text-align: center;
-            padding: 40px;
+            padding: 30px 10px;
             border: 2px dashed #ddd;
             border-radius: 20px;
-            margin-top: 20px;
-            position: relative;
+            margin-top: 10px;
             background: white;
         }
-        .card-word { font-size: 2.5em; margin-bottom: 10px; color: var(--primary-color); }
-        .card-phonetic { font-size: 1.2em; color: #888; margin-bottom: 20px; }
-        .card-meaning { font-size: 1.5em; font-weight: bold; display: none; }
+        .card-word { font-size: 2em; margin-bottom: 5px; color: var(--primary-color); }
+        .card-phonetic { font-size: 1em; color: #888; margin-bottom: 15px; }
+        .card-meaning { font-size: 1.2em; font-weight: bold; display: none; }
         .card-display.show-meaning .card-meaning { display: block; }
 
-        /* 輪播模式 */
         .carousel-container {
             text-align: center;
-            padding: 30px;
+            padding: 20px;
             background: #333;
             color: #fff;
             border-radius: 15px;
-            min-height: 200px;
+            min-height: 150px;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
         }
-        .carousel-word { font-size: 3em; margin-bottom: 10px; }
-        .carousel-meaning { font-size: 1.5em; color: #ffd700; margin-top: 10px; opacity: 0; transition: opacity 0.5s; }
+        .carousel-word { font-size: 2.2em; margin-bottom: 5px; }
+        .carousel-meaning { font-size: 1.2em; color: #ffd700; margin-top: 5px; opacity: 0; transition: opacity 0.5s; }
         .carousel-meaning.visible { opacity: 1; }
         
         .carousel-controls {
-            margin-top: 20px;
+            margin-top: 15px;
             display: flex;
             gap: 10px;
             justify-content: center;
+            flex-wrap: wrap;
         }
     </style>
 </head>
@@ -228,24 +248,25 @@ html_code = """
 
 <div class="container">
     <div class="header-top">
-        <h2><i class="fas fa-book-open"></i> 單字本</h2>
-        
-        <div class="stats-container">
-            <span id="cloudCount">☁️ 雲端總數: 0</span>
-            <span id="localCount">📖 本子字數: 0</span>
-        </div>
-
+        <h3 class="header-title"><i class="fas fa-book-open"></i> 單字本</h3>
         <div class="header-controls">
-            <button class="btn btn-secondary" onclick="alert('設定功能開發中...')"><i class="fas fa-cog"></i> 設定</button>
-            <button class="btn btn-primary" onclick="downloadData()"><i class="fas fa-download"></i> 下載</button>
+            <button class="btn btn-secondary" onclick="alert('設定')"><i class="fas fa-cog"></i></button>
+            <button class="btn btn-primary" onclick="downloadData()"><i class="fas fa-download"></i></button>
+        </div>
+    </div>
+    
+    <div style="display:flex; justify-content:center;">
+        <div class="stats-container">
+            <span id="cloudCount">☁️ 雲: 0</span>
+            <span id="localCount">📖 本: 0</span>
         </div>
     </div>
 
     <div class="input-group">
-        <input type="text" id="newWord" placeholder="輸入英文單字">
-        <input type="text" id="newMeaning" placeholder="輸入中文意思">
-        <button class="btn btn-primary" onclick="addWord()">加入單字</button>
-        <button class="btn btn-secondary" onclick="batchAdd()">拼次加入</button>
+        <input type="text" id="newWord" placeholder="英文單字">
+        <input type="text" id="newMeaning" placeholder="中文意思">
+        <button class="btn btn-primary" onclick="addWord()">加入</button>
+        <button class="btn btn-secondary" onclick="batchAdd()">拼次</button>
     </div>
 
     <div class="nav-tabs">
@@ -265,7 +286,7 @@ html_code = """
             <div class="card-word" id="cardWord">Word</div>
             <div class="card-phonetic" id="cardPhonetic">/wɜːrd/</div>
             <div class="card-meaning" id="cardMeaning">單字</div>
-            <p style="color: #999; margin-top: 30px; font-size: 0.8em;">(點擊卡片顯示/隱藏中文)</p>
+            <p style="color: #999; margin-top: 20px; font-size: 0.8em;">(點擊顯示中文)</p>
             <div class="carousel-controls">
                 <button class="btn btn-secondary" onclick="prevCard()">上一個</button>
                 <button class="btn btn-primary" onclick="speakCurrentCard()">發音</button>
@@ -280,19 +301,19 @@ html_code = """
             <div class="carousel-meaning" id="carouselMeaning">準備開始</div>
         </div>
         <div class="carousel-controls">
-            <button class="btn btn-primary" id="btnStartCarousel" onclick="toggleCarousel()">開始輪播</button>
-            <label style="display:flex; align-items:center; gap:5px; color: #333;">
-                <input type="checkbox" id="carouselSound" checked> 開啟聲音
+            <button class="btn btn-primary" id="btnStartCarousel" onclick="toggleCarousel()">開始</button>
+            <label style="display:flex; align-items:center; gap:5px; color: #333; font-size:0.9em;">
+                <input type="checkbox" id="carouselSound" checked> 聲音
             </label>
         </div>
     </div>
 
     <div id="tab-quiz" class="content-section">
-        <p style="text-align:center;">測驗功能區 (待實作)</p>
+        <p style="text-align:center;">測驗 (待實作)</p>
     </div>
     
     <div id="tab-spelling" class="content-section">
-        <p style="text-align:center;">拼字功能區 (待實作)</p>
+        <p style="text-align:center;">拼字 (待實作)</p>
     </div>
 
 </div>
@@ -316,8 +337,8 @@ html_code = """
     }
 
     function updateStats() {
-        document.getElementById('cloudCount').textContent = `☁️ 雲端總數: ${words.length * 15}`;
-        document.getElementById('localCount').textContent = `📖 本子字數: ${words.length}`;
+        document.getElementById('cloudCount').textContent = `☁️ 雲: ${words.length * 15}`;
+        document.getElementById('localCount').textContent = `📖 本: ${words.length}`;
     }
 
     function switchTab(tabName) {
@@ -347,10 +368,10 @@ html_code = """
                     <span class="word-meaning">${item.meaning}</span>
                 </div>
                 <div class="word-actions">
-                    <button class="action-btn" title="發音" onclick="speak('${item.word}')"><i class="fas fa-volume-up"></i></button>
-                    <button class="action-btn" title="Google翻譯" onclick="window.open('https://translate.google.com/?sl=en&tl=zh-TW&text=${item.word}', '_blank')"><i class="fab fa-google"></i></button>
-                    <button class="action-btn" title="Yahoo字典" onclick="window.open('https://tw.dictionary.yahoo.com/dictionary?p=${item.word}', '_blank')"><i class="fab fa-yahoo"></i></button>
-                    <button class="action-btn delete" title="刪除" onclick="deleteWord(${index})"><i class="fas fa-trash-alt"></i></button>
+                    <button class="action-btn" onclick="speak('${item.word}')"><i class="fas fa-volume-up"></i></button>
+                    <button class="action-btn" onclick="window.open('https://translate.google.com/?sl=en&tl=zh-TW&text=${item.word}', '_blank')">G</button>
+                    <button class="action-btn" onclick="window.open('https://tw.dictionary.yahoo.com/dictionary?p=${item.word}', '_blank')">Y</button>
+                    <button class="action-btn delete" onclick="deleteWord(${index})"><i class="fas fa-trash-alt"></i></button>
                 </div>
             `;
             list.appendChild(li);
@@ -366,12 +387,12 @@ html_code = """
             document.getElementById('newMeaning').value = '';
             init();
         } else {
-            alert('請輸入單字和中文');
+            alert('請輸入內容');
         }
     }
 
     function deleteWord(index) {
-        if(confirm('確定刪除?')) {
+        if(confirm('刪除?')) {
             words.splice(index, 1);
             init();
         }
@@ -412,13 +433,13 @@ html_code = """
         if (isCarouselPlaying) {
             clearInterval(carouselInterval);
             isCarouselPlaying = false;
-            btn.textContent = "開始輪播";
+            btn.textContent = "開始";
             btn.classList.remove('btn-danger');
             btn.classList.add('btn-primary');
         } else {
-            if(words.length === 0) { alert('沒有單字可輪播'); return; }
+            if(words.length === 0) { alert('無單字'); return; }
             isCarouselPlaying = true;
-            btn.textContent = "停止輪播";
+            btn.textContent = "停止";
             btn.classList.remove('btn-primary');
             btn.classList.add('btn-danger');
             runCarouselStep();
@@ -451,7 +472,7 @@ html_code = """
         anchor.remove();
     }
 
-    function batchAdd() { alert('批量加入功能開發中'); }
+    function batchAdd() { alert('開發中'); }
 
     init();
 </script>
@@ -459,6 +480,5 @@ html_code = """
 </html>
 """
 
-# 在 Streamlit 中渲染 HTML
-# height 設定高一點以免內容被截斷
+# 渲染 HTML 元件
 components.html(html_code, height=850, scrolling=True)
