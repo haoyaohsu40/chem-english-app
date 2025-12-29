@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面與 CSS 設定
 # ==========================================
-VERSION = "v49.0 (Ultimate Mobile)"
+VERSION = "v50.0 (Stable Final)"
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
 st.markdown("""
@@ -32,17 +32,10 @@ st.markdown("""
         margin: 20px auto; max-width: 500px; border-top: 6px solid #1E88E5;
     }
     
-    /* 頂部 Header */
-    .header-row {
-        background: white; padding: 15px; border-radius: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 15px;
-        display: flex; align-items: center; justify-content: space-between;
-    }
-    
     /* 輸入框優化 */
     .stTextInput>div>div>input { color: #333 !important; background-color: white !important; }
 
-    /* 列表模式優化 */
+    /* 列表卡片 */
     .list-card {
         background: white; padding: 15px; margin-bottom: 10px;
         border-radius: 12px; border-left: 5px solid #4CAF50;
@@ -50,14 +43,14 @@ st.markdown("""
     }
     .list-word { font-size: 20px; font-weight: 900; color: #2e7d32; }
     .list-ipa { font-size: 14px; color: #757575; font-family: monospace; margin-left: 5px; }
-    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; margin-top: 2px; }
-    .list-actions { margin-top: 10px; display: flex; gap: 10px; }
+    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; display: block; margin-top: 4px; }
     
-    /* 連結按鈕 */
+    /* 連結按鈕 (G/Y) */
     a.link-btn {
-        text-decoration: none; display: inline-block; padding: 4px 12px;
-        border-radius: 6px; font-weight: bold; border: 1px solid #ddd; 
+        text-decoration: none; display: inline-block; padding: 8px 0;
+        border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
         font-size: 14px; color: #555; background: #f1f3f4;
+        width: 100%; text-align: center;
     }
 
     /* 卡片模式 */
@@ -74,8 +67,7 @@ st.markdown("""
         background-color: #fffde7; padding: 20px; border-radius: 15px;
         text-align: center; border: 2px dashed #fbc02d; margin-bottom: 15px;
     }
-    .quiz-word { font-size: 40px; font-weight: 900; color: #1565C0; margin: 10px 0; }
-    .mistake-mode { border-color: #ef5350 !important; background-color: #ffebee !important; }
+    .quiz-word { font-size: 32px; font-weight: 900; color: #1565C0; margin: 10px 0; }
 
     /* 按鈕樣式 */
     .stButton>button { border-radius: 12px; width: 100%; font-weight: bold; height: auto; padding: 10px 0; }
@@ -93,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 核心功能
+# 2. 核心功能函式
 # ==========================================
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -157,6 +149,24 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         return f"""<audio id="{rand_id}" controls {autoplay_attr} style="{display_style}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     except: return ""
 
+def generate_custom_audio(df, sequence, tld='com', slow=False):
+    full_text = ""
+    # 限制筆數以免過久
+    process_df = df.iloc[::-1].head(50) 
+    for i, (index, row) in enumerate(process_df.iterrows(), start=1):
+        word = str(row['Word']); chinese = str(row['Chinese'])
+        full_text += f"Number {i}. " 
+        if not sequence: full_text += f"{word}. {chinese}. "
+        else:
+            for item in sequence:
+                if item == "英文": full_text += f"{word}. "
+                elif item == "中文": full_text += f"{chinese}. "
+        full_text += " ... "
+    tts = gTTS(text=full_text, lang='zh-TW', slow=slow) # 使用 zh-TW 引擎來混讀
+    fp = BytesIO()
+    tts.write_to_fp(fp)
+    return fp.getvalue()
+
 def add_word_callback():
     w_in = st.session_state.input_word
     if st.session_state.nb_mode == "建立新本":
@@ -205,8 +215,8 @@ def initialize_session_state():
     if 'current_user' not in st.session_state: st.session_state.current_user = None
     if 'df' not in st.session_state: st.session_state.df = get_google_sheet_data()
     
-    # 頁面狀態 (False=主頁, True=設定頁)
-    if 'show_settings_page' not in st.session_state: st.session_state.show_settings_page = False
+    # 頁面路由 False=主頁, 1=設定, 2=下載
+    if 'current_page' not in st.session_state: st.session_state.current_page = "main"
     
     # 設定
     if 'play_order' not in st.session_state: st.session_state.play_order = ["英文", "中文"]
@@ -214,7 +224,7 @@ def initialize_session_state():
     if 'is_slow' not in st.session_state: st.session_state.is_slow = False
     if 'nb_mode' not in st.session_state: st.session_state.nb_mode = "選擇現有"
     
-    # 測驗/拼字/輪播 狀態
+    # 測驗/拼字/輪播 狀態 (解決重複ID問題)
     if 'quiz_current' not in st.session_state: st.session_state.quiz_current = None
     if 'quiz_score' not in st.session_state: st.session_state.quiz_score = 0
     if 'quiz_total' not in st.session_state: st.session_state.quiz_total = 0
@@ -248,8 +258,8 @@ def login_page():
 # --- 設定頁面 (獨立畫面) ---
 def settings_page():
     st.markdown("### ⚙️ 設定與管理")
-    if st.button("🔙 返回主畫面", type="secondary", use_container_width=True):
-        st.session_state.show_settings_page = False; st.rerun()
+    if st.button("🔙 返回主畫面", type="secondary", use_container_width=True, key="btn_back_set"):
+        st.session_state.current_page = "main"; st.rerun()
     
     st.divider()
     
@@ -259,7 +269,7 @@ def settings_page():
     curr_acc = [k for k, v in accents.items() if v == st.session_state.accent_tld][0]
     st.session_state.accent_tld = accents[st.selectbox("口音", list(accents.keys()), index=list(accents.keys()).index(curr_acc))]
     
-    # 速度選擇 (修復：正常/慢速)
+    # 速度選擇
     spd_opts = ["正常", "慢速"]
     curr_spd = "慢速" if st.session_state.is_slow else "正常"
     sel_spd = st.radio("語速", spd_opts, index=spd_opts.index(curr_spd), horizontal=True)
@@ -267,7 +277,7 @@ def settings_page():
 
     st.divider()
     
-    # 2. 播放順序 (修復：按鈕累加模式)
+    # 2. 播放順序
     st.subheader("🎧 輪播順序")
     c1, c2, c3 = st.columns(3)
     with c1: 
@@ -305,8 +315,47 @@ def settings_page():
              st.success("刪除成功"); st.rerun()
     
     st.divider()
-    if st.button("🚪 登出", type="secondary", use_container_width=True): 
-        st.session_state.logged_in = False; st.session_state.show_settings_page = False; st.rerun()
+    if st.button("🚪 登出", type="secondary", use_container_width=True, key="btn_logout"): 
+        st.session_state.logged_in = False; st.session_state.current_page = "main"; st.rerun()
+
+# --- 下載頁面 (獨立畫面) ---
+def download_page():
+    st.markdown("### 📥 下載中心")
+    if st.button("🔙 返回主畫面", type="secondary", use_container_width=True, key="btn_back_dl"):
+        st.session_state.current_page = "main"; st.rerun()
+
+    df = st.session_state.df
+    current_user = st.session_state.current_user
+    # 取得當前筆記本(預設全部，若有session則過濾)
+    # 簡單起見，這裡讓用戶再選一次要下載哪一本
+    st.divider()
+    
+    notebooks = sorted(list(set(df[df['User']==current_user]['Notebook'].dropna().unique().tolist())))
+    target_nb = st.selectbox("選擇要下載的筆記本", ["全部"] + notebooks)
+    
+    dl_df = df[df['User'] == current_user]
+    if target_nb != "全部":
+        dl_df = dl_df[dl_df['Notebook'] == target_nb]
+    
+    st.info(f"已選擇: {len(dl_df)} 個單字")
+
+    st.markdown("#### 1. 下載 Excel")
+    if not dl_df.empty:
+        st.download_button("📥 下載 Excel 檔案", to_excel(dl_df), f"Vocab_{target_nb}.xlsx", use_container_width=True, key="dl_xlsx")
+    else:
+        st.button("無資料可下載", disabled=True, use_container_width=True)
+    
+    st.markdown("#### 2. 下載 MP3 語音檔")
+    st.caption("⚠️ 注意：單字量大時製作需等待約 10-30 秒")
+    if not dl_df.empty:
+        if st.button("🎵 開始製作 MP3", type="primary", use_container_width=True, key="gen_mp3"):
+            with st.spinner("正在錄音中...請稍候"):
+                mp3_data = generate_custom_audio(dl_df, st.session_state.play_order, st.session_state.accent_tld, st.session_state.is_slow)
+                st.session_state.mp3_cache = mp3_data
+                st.rerun()
+        
+        if 'mp3_cache' in st.session_state:
+             st.download_button("⬇️ 下載製作好的 MP3", st.session_state.mp3_cache, f"Audio_{target_nb}.mp3", "audio/mp3", use_container_width=True, key="dl_mp3_final")
 
 # --- 主功能頁面 ---
 def main_page():
@@ -330,12 +379,9 @@ def main_page():
     c_h1, c_h2, c_h3 = st.columns([5, 1, 1])
     with c_h1: st.markdown(f"**Hi, {current_user}**")
     with c_h2: 
-        if st.button("⚙️", help="設定"): st.session_state.show_settings_page = True; st.rerun()
+        if st.button("⚙️", help="設定", key="go_settings"): st.session_state.current_page = "settings"; st.rerun()
     with c_h3:
-        if not df.empty:
-            st.download_button("📥", to_excel(df), "vocab.xlsx", help="下載 Excel")
-        else:
-            st.button("📥", disabled=True)
+        if st.button("📥", help="下載", key="go_download"): st.session_state.current_page = "download"; st.rerun()
 
     # --- Input Area ---
     st.write("📝 **新增單字**")
@@ -352,17 +398,17 @@ def main_page():
     
     b1, b2 = st.columns(2)
     with b1:
-        if st.button("👀 翻譯", use_container_width=True):
+        if st.button("👀 翻譯", use_container_width=True, key="btn_trans"):
             if w_in: st.info(GoogleTranslator(source='auto', target='zh-TW').translate(w_in))
     with b2:
-        if st.button("🔊 試聽", use_container_width=True):
+        if st.button("🔊 試聽", use_container_width=True, key="btn_listen"):
             if w_in: st.markdown(get_audio_html(w_in, tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
     
-    st.button("➕ 加入單字庫", type="primary", use_container_width=True, on_click=add_word_callback)
+    st.button("➕ 加入單字庫", type="primary", use_container_width=True, on_click=add_word_callback, key="btn_add")
 
     # --- Stats & Filter ---
     st.divider()
-    filter_nb = st.selectbox("複習筆記本", ["全部"] + notebooks)
+    filter_nb = st.selectbox("複習筆記本", ["全部"] + notebooks, key="main_filter_nb")
     filtered_df = df if filter_nb == "全部" else df[df['Notebook'] == filter_nb]
     
     s1, s2 = st.columns(2)
@@ -374,27 +420,27 @@ def main_page():
     # --- Tabs ---
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # Tab 1: 列表 (增強版)
+    # Tab 1: 列表 (按鈕單列化 & 修復ID)
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
                 st.markdown(f"""
                 <div class="list-card">
                     <div><span class="list-word">{row['Word']}</span><span class="list-ipa">{row['IPA']}</span></div>
-                    <div class="list-mean">{row['Chinese']}</div>
+                    <span class="list-mean">{row['Chinese']}</span>
                 </div>""", unsafe_allow_html=True)
                 
-                # 功能按鈕列 (Audio, G, Y, Del)
-                ac1, ac2, ac3, ac4 = st.columns([1, 1, 1, 1])
+                # 功能按鈕列 (同一列 1:1:1:1)
+                ac1, ac2, ac3, ac4 = st.columns(4)
                 with ac1:
-                    if st.button("🔊", key=f"l_play_{i}"):
+                    if st.button("🔊", key=f"l_play_{i}", use_container_width=True):
                         st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
                 with ac2:
-                    st.markdown(f'<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row["Word"]}&op=translate" target="_blank" class="link-btn">G 翻譯</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row["Word"]}&op=translate" target="_blank" class="link-btn">G</a>', unsafe_allow_html=True)
                 with ac3:
-                    st.markdown(f'<a href="https://tw.dictionary.search.yahoo.com/search?p={row["Word"]}" target="_blank" class="link-btn">Y 字典</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="https://tw.dictionary.search.yahoo.com/search?p={row["Word"]}" target="_blank" class="link-btn">Y</a>', unsafe_allow_html=True)
                 with ac4:
-                    if st.button("🗑️", key=f"l_del_{i}"):
+                    if st.button("🗑️", key=f"l_del_{i}", use_container_width=True):
                         st.session_state.df = st.session_state.df.drop(i)
                         save_to_google_sheet(st.session_state.df)
                         st.rerun()
@@ -420,15 +466,16 @@ def main_page():
                 if st.button("▶", key="c_next", use_container_width=True): st.session_state.card_idx += 1; st.rerun()
         else: st.warning("無資料")
 
-    # Tab 3: 輪播 (修復)
+    # Tab 3: 輪播 (徹底修復 ID)
     with tabs[2]:
-        st.caption("設定請至 ⚙️ 調整")
-        if st.button("▶️ 開始輪播", type="primary", use_container_width=True):
+        if st.button("▶️ 開始輪播", type="primary", use_container_width=True, key="start_slide"):
             if not st.session_state.play_order: st.error("請先去設定播放順序！")
             else:
                 ph = st.empty()
-                for _, row in filtered_df.sample(frac=1).iterrows():
-                    for step in st.session_state.play_order:
+                # 使用 sample 產生隨機但固定的順序
+                slide_df = filtered_df.sample(frac=1)
+                for r_idx, row in slide_df.iterrows():
+                    for step_idx, step in enumerate(st.session_state.play_order):
                         ph.empty(); time.sleep(0.1)
                         txt, lang = (row['Word'], 'en') if step == "英文" else (row['Chinese'], 'zh-TW')
                         html = f"""<div class="card-box"><div class="card-word" style="font-size:30px;">{txt}</div></div>"""
@@ -438,14 +485,14 @@ def main_page():
                         time.sleep(2.5)
                 ph.success("播放結束")
 
-    # Tab 4: 測驗 (修復)
+    # Tab 4: 測驗 (徹底修復 ID)
     with tabs[3]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
             c_s, c_r = st.columns([3, 1])
             rate = (st.session_state.quiz_score/st.session_state.quiz_total)*100 if st.session_state.quiz_total>0 else 0
             c_s.caption(f"答對: {st.session_state.quiz_score}/{st.session_state.quiz_total} ({rate:.0f}%)")
-            if c_r.button("歸零"): st.session_state.quiz_score=0; st.session_state.quiz_total=0; st.rerun()
+            if c_r.button("歸零", key="reset_quiz"): st.session_state.quiz_score=0; st.session_state.quiz_total=0; st.rerun()
 
             if st.session_state.quiz_current is None or st.session_state.quiz_current['Word'] not in filtered_df['Word'].values:
                 # Next Question Logic
@@ -461,12 +508,13 @@ def main_page():
             
             q = st.session_state.quiz_current
             st.markdown(f"""<div class="quiz-card"><div class="quiz-word">{q['Word']}</div></div>""", unsafe_allow_html=True)
-            if st.button("🔊 題目發音", use_container_width=True):
+            if st.button("🔊 題目發音", use_container_width=True, key="play_quiz_audio"):
                  st.markdown(get_audio_html(q['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
             
             if not st.session_state.quiz_answered:
-                for opt in st.session_state.quiz_options:
-                    if st.button(opt, use_container_width=True):
+                # 關鍵修復：給每一個選項按鈕唯一的 KEY
+                for idx, opt in enumerate(st.session_state.quiz_options):
+                    if st.button(opt, use_container_width=True, key=f"q_opt_{q['Word']}_{idx}"):
                         st.session_state.quiz_answered = True
                         st.session_state.quiz_total += 1
                         if opt == q['Chinese']: 
@@ -477,10 +525,10 @@ def main_page():
                             add_to_mistake_notebook(q, current_user)
                         st.rerun()
             else:
-                if st.button("➡️ 下一題", type="primary", use_container_width=True):
+                if st.button("➡️ 下一題", type="primary", use_container_width=True, key="next_quiz"):
                     st.session_state.quiz_current = None; st.rerun()
 
-    # Tab 5: 拼字 (修復)
+    # Tab 5: 拼字 (徹底修復 ID)
     with tabs[4]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
@@ -493,12 +541,12 @@ def main_page():
             sq = st.session_state.spell_current
             st.markdown(f"""<div class="quiz-card"><div style="color:#888;">請聽音拼字</div><div class="quiz-word" style="font-size:24px;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
             
-            if st.button("🔊 播放發音", use_container_width=True):
+            if st.button("🔊 播放發音", use_container_width=True, key="play_spell_audio"):
                 st.markdown(get_audio_html(sq['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
             
             if not st.session_state.spell_checked:
                 inp = st.text_input("輸入單字", key="sp_in")
-                if st.button("送出", type="primary", use_container_width=True):
+                if st.button("送出", type="primary", use_container_width=True, key="submit_spell"):
                     st.session_state.spell_checked = True
                     st.session_state.spell_input = inp
                     st.session_state.spell_total += 1
@@ -512,7 +560,7 @@ def main_page():
             else:
                 if st.session_state.spell_correct: st.success(f"🎉 正確！ {sq['Word']}")
                 else: st.error(f"❌ 錯誤。答案是：{sq['Word']}")
-                if st.button("➡️ 下一題", type="primary", use_container_width=True):
+                if st.button("➡️ 下一題", type="primary", use_container_width=True, key="next_spell"):
                     st.session_state.spell_current = None; st.rerun()
 
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
@@ -522,8 +570,11 @@ def main():
     if not st.session_state.logged_in:
         login_page()
     else:
-        if st.session_state.show_settings_page:
+        # 頁面路由控制
+        if st.session_state.current_page == "settings":
             settings_page()
+        elif st.session_state.current_page == "download":
+            download_page()
         else:
             main_page()
 
