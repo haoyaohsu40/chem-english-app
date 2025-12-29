@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面與 CSS 設定
 # ==========================================
-VERSION = "v52.0 (Layout Fix & Slide Stop)"
+VERSION = "v52.1 (UI Layout Fix)"
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
 st.markdown("""
@@ -35,24 +35,38 @@ st.markdown("""
     /* 輸入框優化 */
     .stTextInput>div>div>input { color: #333 !important; background-color: white !important; }
 
-    /* 列表卡片 (優化間距) */
+    /* --- 修正 4: Tab 分頁平均分散 --- */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2px;
+    }
+    .stTabs [data-baseweb="tab-list"] button {
+        flex-grow: 1;
+    }
+
+    /* --- 修正 2: 列表單字同一排 --- */
     .list-card {
-        background: white; padding: 12px; margin-bottom: 8px;
+        background: white; padding: 12px; margin-bottom: 4px;
         border-radius: 12px; border-left: 5px solid #4CAF50;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        /* 讓內部元素水平排列 */
+        display: flex; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 8px;
     }
     .list-word { font-size: 20px; font-weight: 900; color: #2e7d32; }
-    .list-ipa { font-size: 14px; color: #757575; font-family: monospace; margin-left: 5px; }
-    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; display: block; margin-top: 4px; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 8px;}
+    .list-ipa { font-size: 14px; color: #757575; font-family: monospace; }
+    /* 中文不換行，改為 inline */
+    .list-mean { 
+        font-size: 16px; color: #1565C0; font-weight: bold; 
+        margin-left: 5px; border: none; padding-bottom: 0;
+    }
     
     /* 連結按鈕 (G/Y) */
     a.link-btn {
         text-decoration: none; display: flex; 
         align-items: center; justify-content: center;
-        padding: 6px 0; border-radius: 8px; 
+        padding: 0; border-radius: 8px; 
         font-weight: bold; border: 1px solid #ddd; 
         font-size: 13px; color: #555; background: #f1f3f4;
-        width: 100%; height: 40px; /* 統一高度 */
+        width: 100%; height: 38px; /* 統一高度 */
         white-space: nowrap; 
     }
 
@@ -77,13 +91,17 @@ st.markdown("""
     .stButton>button { 
         border-radius: 8px; width: 100%; font-weight: bold; 
         height: auto; padding: 6px 0;
-        min-height: 40px; 
+        min-height: 38px; 
     }
     
-    /* 統計方塊 */
+    /* --- 修正 5: 統計方塊強制同一排 --- */
+    .stats-row {
+        display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px;
+    }
     .stat-box {
         background: white; border-radius: 10px; padding: 10px; text-align: center;
         border: 1px solid #e0e0e0; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        flex: 1; /* 平均分配寬度 */
     }
     .stat-num { font-size: 20px; font-weight: bold; color: #1976D2; }
     .stat-lbl { font-size: 12px; color: #666; }
@@ -153,7 +171,6 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         b64 = base64.b64encode(fp.getvalue()).decode()
         rand_id = f"audio_{uuid.uuid4()}"
         autoplay_attr = "autoplay" if autoplay else ""
-        # 使用 opacity:0 隱藏，確保手機瀏覽器能自動播放
         style = "width: 100%; margin-top: 5px;" if visible else "width: 1px; height: 1px; opacity: 0; position: absolute; left: -9999px;"
         return f"""<audio id="{rand_id}" controls {autoplay_attr} style="{style}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     except: return ""
@@ -230,7 +247,7 @@ def initialize_session_state():
     if 'is_slow' not in st.session_state: st.session_state.is_slow = False
     if 'nb_mode' not in st.session_state: st.session_state.nb_mode = "選擇現有"
     
-    # 輪播狀態 (新增: 是否正在運行)
+    # 輪播狀態
     if 'is_sliding' not in st.session_state: st.session_state.is_sliding = False
 
     # 測驗/拼字狀態
@@ -356,12 +373,18 @@ def main_page():
     if 'Default' not in notebooks: notebooks.append('Default')
     if "🔥 錯題本 (Auto)" not in notebooks: notebooks.append("🔥 錯題本 (Auto)")
 
-    c_h1, c_h2, c_h3 = st.columns([5, 1, 1])
-    with c_h1: st.markdown(f"**Hi, {current_user}**")
-    with c_h2: 
-        if st.button("⚙️", help="設定", key="go_settings"): st.session_state.current_page = "settings"; st.rerun()
-    with c_h3:
-        if st.button("📥", help="下載", key="go_download"): st.session_state.current_page = "download"; st.rerun()
+    # --- 修正 1: 設定與下載按鈕放在同一排 ---
+    # 使用 7:3 比例，右側再分兩個 columns 放按鈕
+    c_title, c_controls = st.columns([7, 3])
+    with c_title: 
+        st.markdown(f"**Hi, {current_user}**")
+    with c_controls:
+        # 將兩個按鈕並排放在右側區域
+        b_set, b_dl = st.columns(2)
+        with b_set:
+            if st.button("⚙️", help="設定", key="go_settings"): st.session_state.current_page = "settings"; st.rerun()
+        with b_dl:
+            if st.button("📥", help="下載", key="go_download"): st.session_state.current_page = "download"; st.rerun()
 
     st.write("📝 **新增單字**")
     st.session_state.nb_mode = st.radio("來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed", index=0 if st.session_state.nb_mode=="選擇現有" else 1, key="nb_radio")
@@ -383,24 +406,32 @@ def main_page():
     st.divider()
     filter_nb = st.selectbox("複習筆記本", ["全部"] + notebooks, key="main_filter_nb")
     filtered_df = df if filter_nb == "全部" else df[df['Notebook'] == filter_nb]
-    s1, s2 = st.columns(2)
-    with s1: st.markdown(f"<div class='stat-box'><div class='stat-num'>{len(df)}</div><div class='stat-lbl'>雲端總數</div></div>", unsafe_allow_html=True)
-    with s2: st.markdown(f"<div class='stat-box'><div class='stat-num'>{len(filtered_df)}</div><div class='stat-lbl'>本子字數</div></div>", unsafe_allow_html=True)
-    st.write("")
+    
+    # --- 修正 5: 統計數據強制同一排 (使用 HTML Flex) ---
+    st.markdown(f"""
+    <div class="stats-row">
+        <div class="stat-box"><div class="stat-num">{len(df)}</div><div class="stat-lbl">雲端總數</div></div>
+        <div class="stat-box"><div class="stat-num">{len(filtered_df)}</div><div class="stat-lbl">本子字數</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # Tab 1: 列表 (版面修復)
+    # Tab 1: 列表
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
+                # --- 修正 2: 單字, 英標, 中文 放在同一個 div 並設定 inline 樣式 ---
                 st.markdown(f"""
                 <div class="list-card">
-                    <div><span class="list-word">{row['Word']}</span><span class="list-ipa">{row['IPA']}</span></div>
+                    <span class="list-word">{row['Word']}</span>
+                    <span class="list-ipa">{row['IPA']}</span>
                     <span class="list-mean">{row['Chinese']}</span>
                 </div>""", unsafe_allow_html=True)
-                # 使用 columns 來控制橫排，並給予適當比例，避免擠壓
-                ac1, ac2, ac3, ac4 = st.columns([0.9, 1.1, 1.1, 0.9])
+                
+                # --- 修正 3: 操作按鈕 (喇叭/G/Y/刪除) 強制同一排 ---
+                # 使用等寬的 columns，並盡量給予足夠空間避免換行
+                ac1, ac2, ac3, ac4 = st.columns([1, 1, 1, 1])
                 with ac1:
                     if st.button("🔊", key=f"l_play_{i}", use_container_width=True):
                         st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
@@ -433,10 +464,9 @@ def main_page():
                 if st.button("▶", key="c_next", use_container_width=True): st.session_state.card_idx += 1; st.rerun()
         else: st.warning("無資料")
 
-    # Tab 3: 輪播 (加入停止鈕)
+    # Tab 3: 輪播
     with tabs[2]:
         ctrl_ph = st.empty()
-        # 根據狀態顯示「開始」或「停止」按鈕
         if not st.session_state.is_sliding:
             if ctrl_ph.button("▶️ 開始輪播", type="primary", use_container_width=True, key="start_slide"):
                 if not st.session_state.play_order: st.error("請先去設定播放順序！")
@@ -449,9 +479,9 @@ def main_page():
             ph = st.empty()
             slide_df = filtered_df.sample(frac=1)
             for r_idx, row in slide_df.iterrows():
-                if not st.session_state.is_sliding: break # 檢查停止標記
+                if not st.session_state.is_sliding: break
                 for step_idx, step in enumerate(st.session_state.play_order):
-                    if not st.session_state.is_sliding: break # 檢查停止標記
+                    if not st.session_state.is_sliding: break
                     ph.empty(); time.sleep(0.1)
                     txt, lang = (row['Word'], 'en') if step == "英文" else (row['Chinese'], 'zh-TW')
                     html = f"""<div class="card-box"><div class="card-word" style="font-size:36px;">{txt}</div></div>"""
@@ -459,80 +489,10 @@ def main_page():
                         st.markdown(html, unsafe_allow_html=True)
                         st.markdown(get_audio_html(txt, lang, st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     time.sleep(2.5)
-            st.session_state.is_sliding = False; st.rerun() # 結束後重置狀態
+            st.session_state.is_sliding = False; st.rerun()
 
     # Tab 4: 測驗
     with tabs[3]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
             c_s, c_r = st.columns([3, 1])
-            rate = (st.session_state.quiz_score/st.session_state.quiz_total)*100 if st.session_state.quiz_total>0 else 0
-            c_s.caption(f"答對: {st.session_state.quiz_score}/{st.session_state.quiz_total} ({rate:.0f}%)")
-            if c_r.button("歸零", key="reset_quiz"): st.session_state.quiz_score=0; st.session_state.quiz_total=0; st.rerun()
-            if st.session_state.quiz_current is None or st.session_state.quiz_current['Word'] not in filtered_df['Word'].values:
-                target = filtered_df.sample(1).iloc[0]
-                st.session_state.quiz_current = target
-                others = filtered_df[filtered_df['Chinese'] != target['Chinese']]
-                distractors = others.sample(min(3, len(others)))['Chinese'].tolist()
-                while len(distractors) < 3: distractors.append("無選項")
-                opts = [target['Chinese']] + distractors; random.shuffle(opts)
-                st.session_state.quiz_options = opts
-                st.session_state.quiz_answered = False
-                st.rerun()
-            q = st.session_state.quiz_current
-            st.markdown(f"""<div class="quiz-card"><div class="quiz-word">{q['Word']}</div></div>""", unsafe_allow_html=True)
-            if st.button("🔊 題目發音", use_container_width=True, key="play_quiz_audio"):
-                 st.markdown(get_audio_html(q['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
-            if not st.session_state.quiz_answered:
-                for idx, opt in enumerate(st.session_state.quiz_options):
-                    if st.button(opt, use_container_width=True, key=f"q_opt_{q['Word']}_{idx}"):
-                        st.session_state.quiz_answered = True
-                        st.session_state.quiz_total += 1
-                        if opt == q['Chinese']: 
-                            st.session_state.quiz_score += 1; st.toast("🎉 正確！", icon="✅")
-                        else: 
-                            st.toast(f"❌ 錯了，是 {q['Chinese']}", icon="❌"); add_to_mistake_notebook(q, current_user)
-                        st.rerun()
-            else:
-                if st.button("➡️ 下一題", type="primary", use_container_width=True, key="next_quiz"):
-                    st.session_state.quiz_current = None; st.rerun()
-
-    # Tab 5: 拼字
-    with tabs[4]:
-        if filtered_df.empty: st.warning("沒單字無法測驗")
-        else:
-            if st.session_state.spell_current is None:
-                st.session_state.spell_current = filtered_df.sample(1).iloc[0]
-                st.session_state.spell_input = ""; st.session_state.spell_checked = False; st.rerun()
-            sq = st.session_state.spell_current
-            st.markdown(f"""<div class="quiz-card"><div style="color:#888;">請聽音拼字</div><div class="quiz-word" style="font-size:24px;">{sq['Chinese']}</div></div>""", unsafe_allow_html=True)
-            if st.button("🔊 播放發音", use_container_width=True, key="play_spell_audio"):
-                st.markdown(get_audio_html(sq['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
-            if not st.session_state.spell_checked:
-                inp = st.text_input("輸入單字", key="sp_in")
-                if st.button("送出", type="primary", use_container_width=True, key="submit_spell"):
-                    st.session_state.spell_checked = True; st.session_state.spell_input = inp; st.session_state.spell_total += 1
-                    if inp.strip().lower() == str(sq['Word']).strip().lower():
-                        st.session_state.spell_score += 1; st.session_state.spell_correct = True
-                    else:
-                        st.session_state.spell_correct = False; add_to_mistake_notebook(sq, current_user)
-                    st.rerun()
-            else:
-                if st.session_state.spell_correct: st.success(f"🎉 正確！ {sq['Word']}")
-                else: st.error(f"❌ 錯誤。答案是：{sq['Word']}")
-                if st.button("➡️ 下一題", type="primary", use_container_width=True, key="next_spell"):
-                    st.session_state.spell_current = None; st.rerun()
-
-    st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
-
-def main():
-    initialize_session_state()
-    if not st.session_state.logged_in:
-        login_page()
-    else:
-        if st.session_state.current_page == "settings": settings_page()
-        elif st.session_state.current_page == "download": download_page()
-        else: main_page()
-
-if __name__ == "__main__":
-    main()
