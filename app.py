@@ -16,7 +16,7 @@ import random
 # ==========================================
 # 1. 頁面與 CSS 設定
 # ==========================================
-VERSION = "v50.0 (Stable Final)"
+VERSION = "v51.0 (Final Polished)"
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
 st.markdown("""
@@ -37,20 +37,34 @@ st.markdown("""
 
     /* 列表卡片 */
     .list-card {
-        background: white; padding: 15px; margin-bottom: 10px;
+        background: white; padding: 15px 15px 5px 15px; margin-bottom: 5px;
         border-radius: 12px; border-left: 5px solid #4CAF50;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .list-word { font-size: 20px; font-weight: 900; color: #2e7d32; }
     .list-ipa { font-size: 14px; color: #757575; font-family: monospace; margin-left: 5px; }
-    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; display: block; margin-top: 4px; }
+    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; display: block; margin-top: 4px; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 8px;}
     
+    /* 強制橫向排列 (解決手機版按鈕堆疊問題) */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 5px !important;
+        align-items: center !important;
+    }
+    [data-testid="column"] {
+        min-width: 0 !important;
+        flex: 1 !important;
+    }
+
     /* 連結按鈕 (G/Y) */
     a.link-btn {
-        text-decoration: none; display: inline-block; padding: 8px 0;
-        border-radius: 8px; font-weight: bold; border: 1px solid #ddd; 
-        font-size: 14px; color: #555; background: #f1f3f4;
-        width: 100%; text-align: center;
+        text-decoration: none; display: flex; 
+        align-items: center; justify-content: center;
+        padding: 8px 0; border-radius: 8px; 
+        font-weight: bold; border: 1px solid #ddd; 
+        font-size: 13px; color: #555; background: #f1f3f4;
+        width: 100%; height: 42px;
+        white-space: nowrap; /* 防止文字換行 */
     }
 
     /* 卡片模式 */
@@ -58,6 +72,7 @@ st.markdown("""
         background-color: white; padding: 30px 20px; border-radius: 15px;
         text-align: center; border: 2px solid #81C784; min-height: 200px;
         box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 15px;
+        display: flex; flex-direction: column; justify-content: center;
     }
     .card-word { font-size: 42px; font-weight: 900; color: #2E7D32; line-height: 1.1; margin-bottom: 5px; }
     .card-ipa { font-size: 16px; color: #666; margin-bottom: 15px; }
@@ -70,7 +85,11 @@ st.markdown("""
     .quiz-word { font-size: 32px; font-weight: 900; color: #1565C0; margin: 10px 0; }
 
     /* 按鈕樣式 */
-    .stButton>button { border-radius: 12px; width: 100%; font-weight: bold; height: auto; padding: 10px 0; }
+    .stButton>button { 
+        border-radius: 8px; width: 100%; font-weight: bold; 
+        height: auto; padding: 8px 0; 
+        min-height: 42px; /* 確保跟連結按鈕一樣高 */
+    }
     
     /* 統計方塊 */
     .stat-box {
@@ -144,9 +163,12 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         fp = BytesIO(); tts.write_to_fp(fp)
         b64 = base64.b64encode(fp.getvalue()).decode()
         rand_id = f"audio_{uuid.uuid4()}"
-        display_style = "display:none;" if (not visible) else "width: 100%; margin-top: 5px;"
         autoplay_attr = "autoplay" if autoplay else ""
-        return f"""<audio id="{rand_id}" controls {autoplay_attr} style="{display_style}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+        
+        # 修正：不使用 display:none，改用 opacity:0 防止瀏覽器阻擋自動播放
+        style = "width: 100%; margin-top: 5px;" if visible else "width: 1px; height: 1px; opacity: 0; position: absolute; left: -9999px;"
+        
+        return f"""<audio id="{rand_id}" controls {autoplay_attr} style="{style}"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     except: return ""
 
 def generate_custom_audio(df, sequence, tld='com', slow=False):
@@ -326,8 +348,6 @@ def download_page():
 
     df = st.session_state.df
     current_user = st.session_state.current_user
-    # 取得當前筆記本(預設全部，若有session則過濾)
-    # 簡單起見，這裡讓用戶再選一次要下載哪一本
     st.divider()
     
     notebooks = sorted(list(set(df[df['User']==current_user]['Notebook'].dropna().unique().tolist())))
@@ -386,7 +406,6 @@ def main_page():
     # --- Input Area ---
     st.write("📝 **新增單字**")
     st.session_state.nb_mode = st.radio("來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed", index=0 if st.session_state.nb_mode=="選擇現有" else 1, key="nb_radio")
-    # 同步 radio 到 session state (Streamlit workaround)
     st.session_state.nb_mode = st.session_state.nb_radio 
 
     if st.session_state.nb_mode == "選擇現有":
@@ -420,7 +439,7 @@ def main_page():
     # --- Tabs ---
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # Tab 1: 列表 (按鈕單列化 & 修復ID)
+    # Tab 1: 列表 (橫向按鈕)
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
@@ -430,15 +449,16 @@ def main_page():
                     <span class="list-mean">{row['Chinese']}</span>
                 </div>""", unsafe_allow_html=True)
                 
-                # 功能按鈕列 (同一列 1:1:1:1)
-                ac1, ac2, ac3, ac4 = st.columns(4)
+                # ★★★ 橫向按鈕列 (使用 Columns) ★★★
+                # 這裡透過 CSS [data-testid="stHorizontalBlock"] 強制不換行
+                ac1, ac2, ac3, ac4 = st.columns([1, 1.2, 1.2, 1])
                 with ac1:
                     if st.button("🔊", key=f"l_play_{i}", use_container_width=True):
                         st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
                 with ac2:
-                    st.markdown(f'<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row["Word"]}&op=translate" target="_blank" class="link-btn">G</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row["Word"]}&op=translate" target="_blank" class="link-btn">G 翻譯</a>', unsafe_allow_html=True)
                 with ac3:
-                    st.markdown(f'<a href="https://tw.dictionary.search.yahoo.com/search?p={row["Word"]}" target="_blank" class="link-btn">Y</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="https://tw.dictionary.search.yahoo.com/search?p={row["Word"]}" target="_blank" class="link-btn">Y 字典</a>', unsafe_allow_html=True)
                 with ac4:
                     if st.button("🗑️", key=f"l_del_{i}", use_container_width=True):
                         st.session_state.df = st.session_state.df.drop(i)
@@ -466,26 +486,29 @@ def main_page():
                 if st.button("▶", key="c_next", use_container_width=True): st.session_state.card_idx += 1; st.rerun()
         else: st.warning("無資料")
 
-    # Tab 3: 輪播 (徹底修復 ID)
+    # Tab 3: 輪播 (聲音修復)
     with tabs[2]:
         if st.button("▶️ 開始輪播", type="primary", use_container_width=True, key="start_slide"):
             if not st.session_state.play_order: st.error("請先去設定播放順序！")
             else:
                 ph = st.empty()
-                # 使用 sample 產生隨機但固定的順序
                 slide_df = filtered_df.sample(frac=1)
                 for r_idx, row in slide_df.iterrows():
                     for step_idx, step in enumerate(st.session_state.play_order):
                         ph.empty(); time.sleep(0.1)
                         txt, lang = (row['Word'], 'en') if step == "英文" else (row['Chinese'], 'zh-TW')
-                        html = f"""<div class="card-box"><div class="card-word" style="font-size:30px;">{txt}</div></div>"""
+                        
+                        # 顯示大卡片
+                        html = f"""<div class="card-box"><div class="card-word" style="font-size:36px;">{txt}</div></div>"""
+                        
                         with ph.container():
                             st.markdown(html, unsafe_allow_html=True)
+                            # ★★★ 聲音修復核心：visible=False 改用 opacity:0
                             st.markdown(get_audio_html(txt, lang, st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                         time.sleep(2.5)
                 ph.success("播放結束")
 
-    # Tab 4: 測驗 (徹底修復 ID)
+    # Tab 4: 測驗
     with tabs[3]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
@@ -495,7 +518,6 @@ def main_page():
             if c_r.button("歸零", key="reset_quiz"): st.session_state.quiz_score=0; st.session_state.quiz_total=0; st.rerun()
 
             if st.session_state.quiz_current is None or st.session_state.quiz_current['Word'] not in filtered_df['Word'].values:
-                # Next Question Logic
                 target = filtered_df.sample(1).iloc[0]
                 st.session_state.quiz_current = target
                 others = filtered_df[filtered_df['Chinese'] != target['Chinese']]
@@ -512,7 +534,6 @@ def main_page():
                  st.markdown(get_audio_html(q['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True), unsafe_allow_html=True)
             
             if not st.session_state.quiz_answered:
-                # 關鍵修復：給每一個選項按鈕唯一的 KEY
                 for idx, opt in enumerate(st.session_state.quiz_options):
                     if st.button(opt, use_container_width=True, key=f"q_opt_{q['Word']}_{idx}"):
                         st.session_state.quiz_answered = True
@@ -528,7 +549,7 @@ def main_page():
                 if st.button("➡️ 下一題", type="primary", use_container_width=True, key="next_quiz"):
                     st.session_state.quiz_current = None; st.rerun()
 
-    # Tab 5: 拼字 (徹底修復 ID)
+    # Tab 5: 拼字
     with tabs[4]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
@@ -570,7 +591,6 @@ def main():
     if not st.session_state.logged_in:
         login_page()
     else:
-        # 頁面路由控制
         if st.session_state.current_page == "settings":
             settings_page()
         elif st.session_state.current_page == "download":
