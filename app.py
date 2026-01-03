@@ -27,11 +27,11 @@ def safe_rerun():
     else:
         st.experimental_rerun()
 
-VERSION = "v55.1 (Mobile Layout & Link Fix)"
+VERSION = "v56.0 (Compact Mobile Layout)"
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
 # ==========================================
-# 1. CSS 樣式 (手機版面強制優化)
+# 1. CSS 樣式 (極限壓縮版)
 # ==========================================
 st.markdown("""
 <style>
@@ -39,40 +39,79 @@ st.markdown("""
     .main { background-color: #f8f9fa; }
     #MainMenu, footer { visibility: hidden; }
 
-    /* --- 關鍵：強制手機版欄位不換行 (解決按鈕變直的問題) --- */
+    /* --- 關鍵：強制手機版欄位極限壓縮 --- */
+    
+    /* 1. 強制水平排列，不準換行 */
     [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
-        overflow-x: auto !important; /* 如果真的太擠，允許左右滑動 */
-        gap: 5px !important; /* 縮小間距 */
+        gap: 2px !important; /* 縮小欄位間距 */
+        align-items: center !important;
     }
     
-    /* 讓欄位可以縮到很小，不要被原本的最小寬度卡住 */
+    /* 2. 允許欄位縮到比預設更小 */
     [data-testid="column"] {
         min-width: 0px !important;
         flex: 1 !important;
-        padding: 0px 2px !important; /* 減少左右留白 */
+        padding: 0px 1px !important; /* 極小左右留白 */
+        overflow: hidden !important;
+    }
+
+    /* 3. 按鈕瘦身 (針對 st.button) */
+    .stButton > button {
+        padding: 0px 0px !important; /* 移除內距 */
+        font-size: 11px !important; /* 縮小字體 */
+        min-height: 32px !important; /* 降低高度 */
+        height: 32px !important;
+        line-height: 32px !important;
+        white-space: nowrap !important; /* 文字不換行 */
+        border-radius: 6px !important;
+    }
+
+    /* 4. 連結按鈕瘦身 (針對 G/Y) */
+    a.custom-link-btn {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        height: 32px !important; /* 跟 st.button 高度一致 */
+        background-color: #f0f2f6;
+        color: #31333F;
+        text-decoration: none;
+        border-radius: 6px;
+        border: 1px solid #d6d6d8;
+        font-weight: 600;
+        font-size: 11px !important; /* 縮小字體 */
+        cursor: pointer;
+        position: relative;
+        z-index: 999;
+        white-space: nowrap;
+    }
+    a.custom-link-btn:hover {
+        border-color: #f63366;
+        color: #f63366;
+        background-color: #ffeef1;
     }
 
     /* --- 列表卡片 --- */
     .list-card {
         background: #ffffff;
-        padding: 10px;
-        margin-bottom: 8px;
-        border-radius: 12px;
-        border-left: 6px solid #4CAF50;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 8px 10px; /* 減少內距 */
+        margin-bottom: 5px;
+        border-radius: 10px;
+        border-left: 5px solid #4CAF50;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     
     .word-row {
         display: flex;
         align-items: baseline;
         gap: 5px;
-        margin-bottom: 5px;
+        margin-bottom: 2px;
         flex-wrap: wrap;
     }
 
-    .list-word { font-size: 18px; font-weight: 900; color: #2e7d32; margin-right: 5px; }
-    .list-ipa { font-size: 13px; color: #888; font-family: monospace; margin-right: 5px; }
+    .list-word { font-size: 18px; font-weight: 900; color: #2e7d32; margin-right: 4px; }
+    .list-ipa { font-size: 12px; color: #888; font-family: monospace; margin-right: 4px; }
     .list-mean { font-size: 15px; color: #1565C0; font-weight: bold; }
 
     /* --- 卡片與測驗 --- */
@@ -104,44 +143,6 @@ st.markdown("""
     .card-ipa { font-size: 16px; color: #666; margin-bottom: 15px; }
     .quiz-word { font-size: 28px; font-weight: 900; color: #1565C0; margin: 10px 0; }
     
-    /* 按鈕微調 (強制讓4個按鈕塞進一排) */
-    .stButton>button { 
-        border-radius: 8px; 
-        font-weight: bold; 
-        width: 100%; 
-        min-height: 38px; 
-        padding: 0px !important; 
-        font-size: 12px !important; /* 字體縮小以適應手機 */
-    }
-    
-    /* 連結按鈕樣式 (修復點擊無反應問題 - 增加 z-index) */
-    a.custom-link-btn {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        height: 38px; /* 跟 st.button 高度一致 */
-        background-color: #f0f2f6;
-        color: #31333F;
-        text-decoration: none;
-        border-radius: 8px;
-        border: 1px solid #d6d6d8;
-        font-weight: 600;
-        font-size: 12px;
-        cursor: pointer;
-        position: relative; /* 關鍵 */
-        z-index: 999; /* 關鍵：確保在最上層 */
-    }
-    a.custom-link-btn:hover {
-        border-color: #f63366;
-        color: #f63366;
-        background-color: #ffeef1;
-    }
-    a.custom-link-btn:active {
-        background-color: #f63366;
-        color: white;
-    }
-
     .version-tag { text-align: center; color: #aaa; font-size: 10px; margin-top: 30px; }
 </style>
 """, unsafe_allow_html=True)
@@ -193,7 +194,7 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         b64 = base64.b64encode(fp.getvalue()).decode()
         rand_id = f"audio_{uuid.uuid4()}"
         
-        # 增強版 Autoplay (針對手機優化)
+        # 增強版 Autoplay
         autoplay_attr = "autoplay" if autoplay else ""
         style = "width: 100%; height: 30px;" if visible else "width: 0; height: 0; display: none;"
         
@@ -206,7 +207,7 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
                     var audio = document.getElementById("{rand_id}");
                     if (audio) {{
                         audio.play().catch(function(error) {{
-                            console.log("Auto-play prevented by browser policy (interact first): " + error);
+                            console.log("Auto-play prevented: " + error);
                         }});
                     }}
                 }}, 100);
@@ -252,7 +253,6 @@ def initialize_session_state():
     if 'nb_mode' not in st.session_state: st.session_state.nb_mode = "選擇現有"
     if 'is_sliding' not in st.session_state: st.session_state.is_sliding = False
     
-    # 測驗/拼字變數
     for k in ['quiz_current', 'quiz_score', 'quiz_total', 'quiz_answered', 'quiz_options']:
         if k not in st.session_state: st.session_state[k] = None if 'current' in k or 'options' in k else 0
     for k in ['spell_current', 'spell_input', 'spell_checked', 'spell_correct', 'spell_score', 'spell_total']:
@@ -272,9 +272,9 @@ def main_page():
     with c_controls:
         b_set, b_dl = st.columns(2)
         with b_set:
-            if st.button("⚙️ 設定", use_container_width=True): st.session_state.current_page = "settings"; safe_rerun()
+            if st.button("⚙️", use_container_width=True): st.session_state.current_page = "settings"; safe_rerun()
         with b_dl:
-            if st.button("📥 下載", use_container_width=True): st.session_state.current_page = "download"; safe_rerun()
+            if st.button("📥", use_container_width=True): st.session_state.current_page = "download"; safe_rerun()
 
     # --- 新增單字區塊 ---
     st.write("📝 **新增單字**")
@@ -356,7 +356,7 @@ def main_page():
 
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # --- Tab 1: 列表 (修正: 4個按鈕同一排且強制不換行) ---
+    # --- Tab 1: 列表 (V56.0 修正: 極限壓縮一行四顆) ---
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
@@ -371,27 +371,28 @@ def main_page():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 修正排版: 使用4個等寬欄位
-                    # 順序: 發音 | 刪除 | G翻譯 | Y字典
-                    # 使用 1:1:1.5:1.5 的比例，讓文字按鈕有空間
-                    c1, c2, c3, c4 = st.columns([1, 1, 2, 2])
+                    # 修正排版: 使用自定義比例
+                    # 在手機上，圖示只需要很小的空間 (0.8)，文字需要較大空間 (1.5)
+                    # 總寬度約 4.6 單位，適合手機
+                    c1, c2, c3, c4 = st.columns([0.8, 0.8, 1.5, 1.5])
                     
                     with c1:
                         if st.button("🔊", key=f"p_{i}"):
                             st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     
                     with c2:
+                        # 刪除鍵緊鄰發音
                         if st.button("🗑️", key=f"d_{i}"):
                             st.session_state.df = st.session_state.df.drop(i)
                             save_to_google_sheet(st.session_state.df)
                             safe_rerun()
                     
                     with c3:
-                        # G 翻譯 (修復點擊反應)
+                        # G 翻譯
                         st.markdown(f'''<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G翻譯</a>''', unsafe_allow_html=True)
 
                     with c4:
-                        # Y 字典 (修復點擊反應)
+                        # Y 字典
                         st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={row['Word']}" target="_blank" class="custom-link-btn">Y字典</a>''', unsafe_allow_html=True)
                     
                     st.markdown("---") 
