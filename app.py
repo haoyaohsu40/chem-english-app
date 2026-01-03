@@ -27,11 +27,11 @@ def safe_rerun():
     else:
         st.experimental_rerun()
 
-VERSION = "v55.0 (Layout Fix & Auto-Play)"
+VERSION = "v55.1 (Mobile Layout & Link Fix)"
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
 # ==========================================
-# 1. CSS 樣式
+# 1. CSS 樣式 (手機版面強制優化)
 # ==========================================
 st.markdown("""
 <style>
@@ -39,10 +39,24 @@ st.markdown("""
     .main { background-color: #f8f9fa; }
     #MainMenu, footer { visibility: hidden; }
 
+    /* --- 關鍵：強制手機版欄位不換行 (解決按鈕變直的問題) --- */
+    [data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important; /* 如果真的太擠，允許左右滑動 */
+        gap: 5px !important; /* 縮小間距 */
+    }
+    
+    /* 讓欄位可以縮到很小，不要被原本的最小寬度卡住 */
+    [data-testid="column"] {
+        min-width: 0px !important;
+        flex: 1 !important;
+        padding: 0px 2px !important; /* 減少左右留白 */
+    }
+
     /* --- 列表卡片 --- */
     .list-card {
         background: #ffffff;
-        padding: 12px;
+        padding: 10px;
         margin-bottom: 8px;
         border-radius: 12px;
         border-left: 6px solid #4CAF50;
@@ -52,14 +66,14 @@ st.markdown("""
     .word-row {
         display: flex;
         align-items: baseline;
-        gap: 8px;
-        margin-bottom: 8px;
+        gap: 5px;
+        margin-bottom: 5px;
         flex-wrap: wrap;
     }
 
-    .list-word { font-size: 20px; font-weight: 900; color: #2e7d32; margin-right: 5px; }
-    .list-ipa { font-size: 14px; color: #888; font-family: monospace; margin-right: 5px; }
-    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; }
+    .list-word { font-size: 18px; font-weight: 900; color: #2e7d32; margin-right: 5px; }
+    .list-ipa { font-size: 13px; color: #888; font-family: monospace; margin-right: 5px; }
+    .list-mean { font-size: 15px; color: #1565C0; font-weight: bold; }
 
     /* --- 卡片與測驗 --- */
     .card-box {
@@ -86,43 +100,42 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    .card-word { font-size: 36px; font-weight: 900; color: #2E7D32; margin-bottom: 10px; }
+    .card-word { font-size: 32px; font-weight: 900; color: #2E7D32; margin-bottom: 10px; }
     .card-ipa { font-size: 16px; color: #666; margin-bottom: 15px; }
-    .quiz-word { font-size: 32px; font-weight: 900; color: #1565C0; margin: 10px 0; }
+    .quiz-word { font-size: 28px; font-weight: 900; color: #1565C0; margin: 10px 0; }
     
     /* 按鈕微調 (強制讓4個按鈕塞進一排) */
     .stButton>button { 
         border-radius: 8px; 
         font-weight: bold; 
         width: 100%; 
-        min-height: 40px; 
-        padding-left: 2px !important; 
-        padding-right: 2px !important;
-        font-size: 14px !important;
+        min-height: 38px; 
+        padding: 0px !important; 
+        font-size: 12px !important; /* 字體縮小以適應手機 */
     }
     
-    /* 連結按鈕樣式 (修復點擊無反應問題) */
+    /* 連結按鈕樣式 (修復點擊無反應問題 - 增加 z-index) */
     a.custom-link-btn {
-        display: block;
+        display: flex;
+        justify-content: center;
+        align-items: center;
         width: 100%;
-        line-height: 40px; /* 垂直置中 */
-        text-align: center;
-        background-color: #ffffff;
+        height: 38px; /* 跟 st.button 高度一致 */
+        background-color: #f0f2f6;
         color: #31333F;
         text-decoration: none;
         border-radius: 8px;
         border: 1px solid #d6d6d8;
         font-weight: 600;
-        font-size: 14px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        transition: all 0.2s;
+        font-size: 12px;
         cursor: pointer;
-        z-index: 10; /* 確保浮在最上層 */
+        position: relative; /* 關鍵 */
+        z-index: 999; /* 關鍵：確保在最上層 */
     }
     a.custom-link-btn:hover {
         border-color: #f63366;
         color: #f63366;
-        background-color: #f0f2f6;
+        background-color: #ffeef1;
     }
     a.custom-link-btn:active {
         background-color: #f63366;
@@ -180,9 +193,9 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         b64 = base64.b64encode(fp.getvalue()).decode()
         rand_id = f"audio_{uuid.uuid4()}"
         
-        # 增強版 Autoplay 標籤 (針對手機優化)
+        # 增強版 Autoplay (針對手機優化)
         autoplay_attr = "autoplay" if autoplay else ""
-        style = "width: 100%; height: 40px;" if visible else "width: 0; height: 0; display: none;"
+        style = "width: 100%; height: 30px;" if visible else "width: 0; height: 0; display: none;"
         
         return f"""
             <audio id="{rand_id}" controls {autoplay_attr} style="{style}" preload="auto">
@@ -275,7 +288,7 @@ def main_page():
     # 單筆輸入
     w_in = st.text_input("輸入英文單字", placeholder="例如: Polymer")
     
-    # --- 批量輸入 (自動翻譯版) ---
+    # --- 批量輸入 ---
     with st.expander("📂 批量輸入 (輸入英文，逗號隔開)"):
         st.caption("只需輸入英文單字，系統會自動翻譯。例如：apple, banana, dog")
         batch_text = st.text_area("輸入框", height=100)
@@ -284,7 +297,6 @@ def main_page():
             if not target_nb: st.error("請選擇筆記本"); st.stop()
             if not batch_text: st.warning("請輸入內容"); st.stop()
             
-            # 分割並處理 (逗號或換行)
             raw_words = batch_text.replace('\n', ',').split(',')
             added_count = 0
             
@@ -344,12 +356,11 @@ def main_page():
 
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # --- Tab 1: 列表 (修正: 4個按鈕同一排) ---
+    # --- Tab 1: 列表 (修正: 4個按鈕同一排且強制不換行) ---
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
                 with st.container():
-                    # 顯示單字
                     st.markdown(f"""
                     <div class="list-card">
                         <div class="word-row">
@@ -362,25 +373,25 @@ def main_page():
                     
                     # 修正排版: 使用4個等寬欄位
                     # 順序: 發音 | 刪除 | G翻譯 | Y字典
-                    c1, c2, c3, c4 = st.columns(4)
+                    # 使用 1:1:1.5:1.5 的比例，讓文字按鈕有空間
+                    c1, c2, c3, c4 = st.columns([1, 1, 2, 2])
                     
                     with c1:
                         if st.button("🔊", key=f"p_{i}"):
                             st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     
                     with c2:
-                        # 刪除鍵移到這裡
                         if st.button("🗑️", key=f"d_{i}"):
                             st.session_state.df = st.session_state.df.drop(i)
                             save_to_google_sheet(st.session_state.df)
                             safe_rerun()
                     
                     with c3:
-                        # G 翻譯 (使用 a 標籤按鈕修復)
+                        # G 翻譯 (修復點擊反應)
                         st.markdown(f'''<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G翻譯</a>''', unsafe_allow_html=True)
 
                     with c4:
-                        # Y 字典 (使用 a 標籤按鈕修復)
+                        # Y 字典 (修復點擊反應)
                         st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={row['Word']}" target="_blank" class="custom-link-btn">Y字典</a>''', unsafe_allow_html=True)
                     
                     st.markdown("---") 
@@ -409,7 +420,7 @@ def main_page():
             with cb3:
                 if st.button("▶", key="c_next"): st.session_state.card_idx += 1; safe_rerun()
 
-    # --- Tab 3: 輪播 (修正: 移除手動按鈕，強制嘗試自動播放) ---
+    # --- Tab 3: 輪播 ---
     with tabs[2]:
         if not st.session_state.is_sliding:
             if st.button("▶️ 開始輪播", type="primary", use_container_width=True):
@@ -432,7 +443,6 @@ def main_page():
                     
                     with ph.container():
                         st.markdown(f"""<div class="card-box"><div class="card-word" style="font-size:36px;">{txt}</div></div>""", unsafe_allow_html=True)
-                        # 自動播放
                         st.markdown(get_audio_html(txt, lang, st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     
                     time.sleep(2.5)
