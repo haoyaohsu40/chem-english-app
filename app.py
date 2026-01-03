@@ -12,10 +12,20 @@ import uuid
 # ==========================================
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
-VERSION = "v58.0 (Mobile Layout & Link Fix)"
+VERSION = "v59.0 (Fix NameError & Layout)"
 
 # ==========================================
-# 2. 安全引用套件
+# 2. 定義重整函式 (必須在被呼叫前定義)
+# ==========================================
+def safe_rerun():
+    """安全重整頁面，相容不同版本"""
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
+
+# ==========================================
+# 3. 安全引用套件
 # ==========================================
 try:
     import gspread
@@ -25,125 +35,93 @@ try:
     import eng_to_ipa
     PACKAGES_OK = True
 except ImportError as e:
-    st.error(f"⚠️ 缺少必要套件，功能可能受限。錯誤: {e}")
+    st.error(f"⚠️ 缺少必要套件: {e}")
     PACKAGES_OK = False
 
 # ==========================================
-# 3. CSS 樣式 (針對手機版面深度優化)
+# 4. CSS 樣式 (針對手機排版與深色模式優化)
 # ==========================================
 st.markdown("""
 <style>
-    /* --- 全域設定 (強制淺色背景，避免深色模式黑屏) --- */
-    .stApp {
-        background-color: #f8f9fa;
-    }
+    /* 強制背景色，避免深色模式文字看不見 */
+    .stApp { background-color: #f8f9fa; }
     #MainMenu, footer { visibility: hidden; }
 
-    /* --- 關鍵：強制手機版欄位「絕對不換行」且縮小間距 --- */
+    /* --- 關鍵：強制手機版欄位「絕對不換行」 --- */
     [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
-        gap: 4px !important; /* 極小間距 */
+        gap: 3px !important;
         align-items: center !important;
         overflow-x: hidden !important;
     }
     
-    /* 強制縮小欄位寬度，讓4個按鈕能擠在手機畫面 */
+    /* 欄位縮小，讓四顆按鈕擠進去 */
     [data-testid="column"] {
         min-width: 0px !important;
         flex: 1 !important;
-        padding: 0px !important;
+        padding: 0px 1px !important;
         overflow: visible !important;
-    }
-
-    /* --- 按鈕樣式 (st.button) --- */
-    .stButton > button {
-        padding: 0px !important;
-        font-size: 13px !important;
-        height: 38px !important;
-        min-height: 38px !important;
-        border-radius: 8px !important;
-        font-weight: bold !important;
-        border: 1px solid #ddd !important;
-        background-color: #ffffff !important;
-        color: #333 !important;
-        width: 100% !important;
-        white-space: nowrap !important;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
-    }
-    .stButton > button:active {
-        background-color: #e3f2fd !important;
-    }
-
-    /* --- 連結按鈕 (G翻譯/Y字典) --- */
-    /* 模擬 Streamlit 按鈕的外觀，確保高度一致 */
-    a.custom-link-btn {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        height: 38px; /* 跟 st.button 高度一致 */
-        background-color: #ffffff;
-        color: #333333 !important;
-        text-decoration: none;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-        font-weight: bold;
-        font-size: 13px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        white-space: nowrap; 
-        z-index: 99;
-        position: relative;
-    }
-    a.custom-link-btn:visited { color: #333333 !important; }
-    a.custom-link-btn:hover {
-        border-color: #2196F3;
-        color: #2196F3 !important;
-        background-color: #f0f8ff;
     }
 
     /* --- 列表卡片 --- */
     .list-card {
         background-color: #ffffff !important;
-        padding: 12px 10px;
-        margin-bottom: 8px;
+        padding: 10px;
+        margin-bottom: 5px;
         border-radius: 10px;
         border-left: 5px solid #4CAF50;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     
     .word-row {
-        display: flex;
-        align-items: baseline;
-        gap: 6px;
-        margin-bottom: 8px;
-        flex-wrap: wrap;
+        display: flex; align-items: baseline; gap: 5px; margin-bottom: 5px; flex-wrap: wrap;
     }
-    .list-word { font-size: 19px; font-weight: 900; color: #2e7d32 !important; margin-right: 2px; }
+    .list-word { font-size: 18px; font-weight: 900; color: #2e7d32 !important; margin-right: 5px; }
     .list-ipa { font-size: 13px; color: #666 !important; font-family: monospace; }
-    .list-mean { font-size: 16px; color: #1565C0 !important; font-weight: bold; margin-left: 2px; }
+    .list-mean { font-size: 16px; color: #1565C0 !important; font-weight: bold; }
+
+    /* --- 按鈕與連結樣式 --- */
+    .stButton > button {
+        padding: 0px !important;
+        font-size: 12px !important;
+        height: 36px !important;
+        min-height: 36px !important;
+        border-radius: 6px !important;
+        font-weight: bold !important;
+        border: 1px solid #ccc !important;
+        background-color: #ffffff !important;
+        color: #333 !important;
+        width: 100% !important;
+    }
+    .stButton > button:active { background-color: #e3f2fd !important; }
+
+    /* G/Y 連結按鈕 */
+    a.custom-link-btn {
+        display: flex; justify-content: center; align-items: center;
+        width: 100%; height: 36px;
+        background-color: #ffffff; color: #333333 !important;
+        text-decoration: none; border-radius: 6px;
+        border: 1px solid #ccc; font-weight: bold; font-size: 12px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        white-space: nowrap; z-index: 99; position: relative;
+    }
+    a.custom-link-btn:hover { border-color: #2196F3; color: #2196F3 !important; background-color: #f0f8ff; }
 
     /* --- 卡片模式 --- */
     .card-box {
-        background-color: #ffffff !important; 
-        padding: 30px 10px; 
-        border-radius: 15px;
-        text-align: center; 
-        border: 3px solid #81C784; 
-        min-height: 200px;
-        margin-bottom: 15px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        background-color: #ffffff !important; padding: 20px; border-radius: 15px;
+        text-align: center; border: 3px solid #81C784; min-height: 200px;
+        margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     .card-word { font-size: 36px; font-weight: 900; color: #2E7D32 !important; margin-bottom: 10px; }
     
-    /* 輸入框修復 */
     .stTextInput input { color: #333 !important; background-color: #fff !important; }
-    
     .version-tag { text-align: center; color: #aaa; font-size: 10px; margin-top: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 4. 核心功能函式
+# 5. 核心功能函式
 # ==========================================
 @st.cache_data(ttl=60, show_spinner=False)
 def get_google_sheet_data():
@@ -185,7 +163,6 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         autoplay_attr = "autoplay" if autoplay else ""
         style = "width: 100%; height: 30px;" if visible else "width: 0; height: 0; display: none;"
         
-        # 自動播放腳本
         js = f"""<script>
             setTimeout(function() {{
                 var audio = document.getElementById("{rand_id}");
@@ -215,7 +192,7 @@ def to_excel(df):
     return output.getvalue()
 
 # ==========================================
-# 5. 主程式邏輯
+# 6. 頁面邏輯
 # ==========================================
 
 def initialize_session_state():
@@ -229,6 +206,50 @@ def initialize_session_state():
     if 'card_idx' not in st.session_state: st.session_state.card_idx = 0
     if 'current_page' not in st.session_state: st.session_state.current_page = "main"
 
+# --- 登入頁面 ---
+def login_page():
+    st.markdown("<h2 style='text-align:center;'>🚀 職場英文生存術</h2>", unsafe_allow_html=True)
+    user = st.text_input("輸入您的 ID", placeholder="Kevin")
+    if st.button("登入", type="primary", use_container_width=True) and user:
+        st.session_state.current_user = user.strip(); st.session_state.logged_in = True; safe_rerun()
+
+# --- 設定頁面 (已恢復) ---
+def settings_page():
+    st.subheader("⚙️ 設定")
+    if st.button("🔙 返回", use_container_width=True): st.session_state.current_page = "main"; safe_rerun()
+    st.divider()
+    
+    st.write("輪播順序:")
+    c1, c2, c3 = st.columns(3)
+    if c1.button("英文"): st.session_state.play_order.append("英文")
+    if c2.button("中文"): st.session_state.play_order.append("中文")
+    if c3.button("清空"): st.session_state.play_order = []
+    st.info(f"順序: {st.session_state.play_order}")
+    
+    st.write("發音設定:")
+    acc = st.selectbox("口音", ["美式(com)", "英式(co.uk)"])
+    st.session_state.accent_tld = "co.uk" if "英式" in acc else "com"
+    
+    st.divider()
+    if st.button("🚪 登出", type="secondary", use_container_width=True):
+        st.session_state.logged_in = False; st.session_state.current_page = "main"; safe_rerun()
+
+# --- 下載頁面 (已恢復) ---
+def download_page():
+    st.subheader("📥 下載")
+    if st.button("🔙 返回", use_container_width=True): st.session_state.current_page = "main"; safe_rerun()
+    st.divider()
+    
+    df = st.session_state.df
+    user_df = df[df['User'] == st.session_state.current_user]
+    st.write(f"目前您的單字總數: {len(user_df)}")
+    
+    if not user_df.empty:
+        st.download_button("📥 下載 Excel", data=to_excel(user_df), file_name="vocab.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    else:
+        st.warning("沒有資料可下載")
+
+# --- 主功能頁面 ---
 def main_page():
     df_all = st.session_state.df
     current_user = st.session_state.current_user
@@ -236,41 +257,38 @@ def main_page():
     notebooks = sorted(list(set(df['Notebook'].dropna().unique().tolist())))
     if 'Default' not in notebooks: notebooks.append('Default')
 
-    # --- 頂部區域 (Header) ---
-    c1, c2 = st.columns([6, 4])
-    with c1: 
-        st.markdown(f"### 🏭 {current_user}")
+    # 頂部
+    c1, c2 = st.columns([5, 5])
+    with c1: st.markdown(f"**Hi, {current_user}**")
     with c2:
         b1, b2 = st.columns(2)
         with b1: 
-            if st.button("⚙️"): st.session_state.current_page = "settings"; safe_rerun()
+            if st.button("設定"): st.session_state.current_page = "settings"; safe_rerun()
         with b2: 
-            if st.button("📥"): st.session_state.current_page = "download"; safe_rerun()
+            if st.button("下載"): st.session_state.current_page = "download"; safe_rerun()
 
-    # --- 新增單字區域 ---
+    # 新增單字
     with st.expander("📝 新增單字", expanded=True):
         nb_mode = st.radio("來源", ["選擇現有", "建立新本"], horizontal=True, label_visibility="collapsed")
-        
         if nb_mode == "選擇現有":
             target_nb = st.selectbox("筆記本", notebooks, label_visibility="collapsed")
         else:
-            target_nb = st.text_input("新筆記本", placeholder="例如: 會議單字")
+            target_nb = st.text_input("新筆記本", placeholder="例如: 會議")
 
         w_in = st.text_input("單字", placeholder="例如: Polymer")
         
-        # 功能按鈕
-        cb1, cb2 = st.columns(2)
-        with cb1:
+        c_tr, c_ls = st.columns(2)
+        with c_tr:
             if st.button("👀 翻譯", use_container_width=True):
                 if w_in and PACKAGES_OK: st.info(GoogleTranslator(source='auto', target='zh-TW').translate(w_in))
-        with cb2:
+        with c_ls:
             if st.button("🔊 試聽", use_container_width=True):
                 if w_in: st.markdown(get_audio_html(w_in, autoplay=True), unsafe_allow_html=True)
                 
         if st.button("➕ 加入單字庫", type="primary", use_container_width=True):
             if w_in and target_nb and PACKAGES_OK:
                 if check_duplicate(st.session_state.df, current_user, target_nb, w_in):
-                    st.toast("⚠️ 單字已存在")
+                    st.toast("已存在")
                 else:
                     try:
                         ipa = f"[{eng_to_ipa.convert(w_in)}]"
@@ -278,14 +296,12 @@ def main_page():
                         new = {'User': current_user, 'Notebook': target_nb, 'Word': w_in, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
                         st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new])], ignore_index=True)
                         save_to_google_sheet(st.session_state.df)
-                        st.toast(f"✅ 已加入: {w_in}")
-                        safe_rerun()
+                        st.toast(f"✅ 加入: {w_in}"); safe_rerun()
                     except: st.error("加入失敗")
 
-        # 批量輸入 (自動翻譯)
         st.markdown("---")
-        st.caption("📂 批量輸入 (輸入英文，逗號隔開)")
-        batch_text = st.text_area("批量輸入", placeholder="apple, banana, orange", height=60, label_visibility="collapsed")
+        st.caption("📂 批量輸入 (英文,逗號隔開)")
+        batch_text = st.text_area("批量", placeholder="apple, banana, dog", height=60, label_visibility="collapsed")
         if st.button("批量加入", use_container_width=True):
             if not target_nb: st.error("請選筆記本"); st.stop()
             words = batch_text.replace('\n', ',').split(',')
@@ -301,17 +317,16 @@ def main_page():
                         cnt += 1
                     except: pass
             if cnt > 0:
-                save_to_google_sheet(st.session_state.df)
-                st.success(f"已加入 {cnt} 個！"); time.sleep(1); safe_rerun()
+                save_to_google_sheet(st.session_state.df); st.success(f"已加入 {cnt} 個！"); time.sleep(1); safe_rerun()
 
-    # --- 複習區域 ---
-    st.markdown("---")
+    st.divider()
     filter_nb = st.selectbox("📖 選擇筆記本", ["全部"] + notebooks)
     filtered_df = df if filter_nb == "全部" else df[df['Notebook'] == filter_nb]
-    
+    st.info(f"📚 {filter_nb}: {len(filtered_df)} 字")
+
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # --- Tab 1: 列表 (手機版面強制四顆橫排) ---
+    # --- Tab 1: 列表 (手機版面強制同一排) ---
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
@@ -325,8 +340,9 @@ def main_page():
                         </div>
                     </div>""", unsafe_allow_html=True)
                     
-                    # ⚠️ 極限壓縮比例: [發音 1] [刪除 1] [G 1.5] [Y 1.5]
-                    c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1.5])
+                    # 順序: [發音] [刪除] [G] [Y]
+                    # 寬度比例調整適合手機
+                    c1, c2, c3, c4 = st.columns([0.8, 0.8, 1.2, 1.2])
                     
                     with c1:
                         if st.button("🔊", key=f"play_{i}"):
@@ -337,12 +353,11 @@ def main_page():
                             save_to_google_sheet(st.session_state.df)
                             safe_rerun()
                     with c3:
-                        # 修正 G 翻譯連結
-                        st.markdown(f'''<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G翻譯</a>''', unsafe_allow_html=True)
+                        # 修正 G 連結: 帶入參數 text={word}
+                        st.markdown(f'''<a href="https://translate.google.com/?sl=auto&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G翻譯</a>''', unsafe_allow_html=True)
                     with c4:
-                        # 修正 Y 字典連結
                         st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={row['Word']}" target="_blank" class="custom-link-btn">Y字典</a>''', unsafe_allow_html=True)
-        else: st.info("尚無單字")
+        else: st.info("無資料")
 
     # --- Tab 2: 卡片 ---
     with tabs[1]:
@@ -355,19 +370,16 @@ def main_page():
                 if st.button("◀"): st.session_state.card_idx -= 1; safe_rerun()
             with c2: 
                 if st.button("👀 中文"): 
-                    st.info(row['Chinese'])
-                    st.markdown(get_audio_html(row['Word'], autoplay=True), unsafe_allow_html=True)
+                    st.info(row['Chinese']); st.markdown(get_audio_html(row['Word'], autoplay=True), unsafe_allow_html=True)
             with c3: 
                 if st.button("▶"): st.session_state.card_idx += 1; safe_rerun()
 
     # --- Tab 3: 輪播 ---
     with tabs[2]:
         if not st.session_state.is_sliding:
-            if st.button("▶️ 開始輪播", type="primary"):
-                st.session_state.is_sliding = True; safe_rerun()
+            if st.button("▶️ 開始", type="primary", use_container_width=True): st.session_state.is_sliding = True; safe_rerun()
         else:
-            if st.button("⏹️ 停止", type="primary"):
-                st.session_state.is_sliding = False; safe_rerun()
+            if st.button("⏹️ 停止", type="primary", use_container_width=True): st.session_state.is_sliding = False; safe_rerun()
         
         if st.session_state.is_sliding:
             ph = st.empty()
@@ -385,54 +397,18 @@ def main_page():
                     time.sleep(2.5)
             st.session_state.is_sliding = False; safe_rerun()
 
-    # --- Tab 4, 5 ---
-    with tabs[3]: st.info("測驗功能請使用電腦版")
-    with tabs[4]: st.info("拼字功能請使用電腦版")
+    with tabs[3]: st.info("測驗功能建議使用電腦版")
+    with tabs[4]: st.info("拼字功能建議使用電腦版")
 
     st.markdown(f'<div class="version-tag">{VERSION}</div>', unsafe_allow_html=True)
 
-# 登入頁面
-def login_page():
-    st.markdown("<h1 style='text-align:center;'>🚀 職場英文生存術</h1>", unsafe_allow_html=True)
-    user = st.text_input("輸入您的 ID", placeholder="Kevin")
-    if st.button("登入", type="primary") and user:
-        st.session_state.current_user = user.strip(); st.session_state.logged_in = True; safe_rerun()
-
-# 設定頁面
-def settings_page():
-    st.title("⚙️ 設定")
-    if st.button("🔙 返回"): st.session_state.current_page = "main"; safe_rerun()
-    st.divider()
-    st.write("輪播順序設定:")
-    c1, c2, c3 = st.columns(3)
-    if c1.button("英文"): st.session_state.play_order.append("英文")
-    if c2.button("中文"): st.session_state.play_order.append("中文")
-    if c3.button("清空"): st.session_state.play_order = []
-    st.info(f"目前順序: {st.session_state.play_order}")
-    if st.button("🚪 登出", type="primary"):
-        st.session_state.logged_in = False
-        st.session_state.current_page = "main"
-        safe_rerun()
-
-# 下載頁面
-def download_page():
-    st.title("📥 下載")
-    if st.button("🔙 返回"): st.session_state.current_page = "main"; safe_rerun()
-    st.divider()
-    df = st.session_state.df
-    user_df = df[df['User'] == st.session_state.current_user]
-    st.download_button("下載 Excel", data=to_excel(user_df), file_name="my_vocab.xlsx")
-
+# 主程式入口
 def main():
     initialize_session_state()
-    if not st.session_state.logged_in: 
-        login_page()
-    elif st.session_state.current_page == "settings":
-        settings_page()
-    elif st.session_state.current_page == "download":
-        download_page()
-    else: 
-        main_page()
+    if not st.session_state.logged_in: login_page()
+    elif st.session_state.current_page == "settings": settings_page()
+    elif st.session_state.current_page == "download": download_page()
+    else: main_page()
 
 if __name__ == "__main__":
     main()
