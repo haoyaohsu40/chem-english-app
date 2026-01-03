@@ -27,7 +27,7 @@ def safe_rerun():
     else:
         st.experimental_rerun()
 
-VERSION = "v54.0 (Auto-Trans Batch & Layout)"
+VERSION = "v55.0 (Layout Fix & Auto-Play)"
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
 # ==========================================
@@ -42,33 +42,33 @@ st.markdown("""
     /* --- 列表卡片 --- */
     .list-card {
         background: #ffffff;
-        padding: 15px;
-        margin-bottom: 10px;
+        padding: 12px;
+        margin-bottom: 8px;
         border-radius: 12px;
         border-left: 6px solid #4CAF50;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     
     .word-row {
         display: flex;
         align-items: baseline;
-        gap: 10px;
-        margin-bottom: 10px;
+        gap: 8px;
+        margin-bottom: 8px;
         flex-wrap: wrap;
     }
 
-    .list-word { font-size: 22px; font-weight: 900; color: #2e7d32; }
-    .list-ipa { font-size: 15px; color: #888; font-family: monospace; }
-    .list-mean { font-size: 18px; color: #1565C0; font-weight: bold; }
+    .list-word { font-size: 20px; font-weight: 900; color: #2e7d32; margin-right: 5px; }
+    .list-ipa { font-size: 14px; color: #888; font-family: monospace; margin-right: 5px; }
+    .list-mean { font-size: 16px; color: #1565C0; font-weight: bold; }
 
     /* --- 卡片與測驗 --- */
     .card-box {
         background-color: #ffffff; 
-        padding: 30px 20px; 
+        padding: 20px; 
         border-radius: 15px;
         text-align: center; 
         border: 3px solid #81C784; 
-        min-height: 220px;
+        min-height: 200px;
         box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
         margin-bottom: 15px;
         display: flex; 
@@ -86,31 +86,47 @@ st.markdown("""
         margin-bottom: 15px;
     }
     
-    .card-word { font-size: 40px; font-weight: 900; color: #2E7D32; margin-bottom: 10px; }
-    .card-ipa { font-size: 18px; color: #666; margin-bottom: 15px; }
+    .card-word { font-size: 36px; font-weight: 900; color: #2E7D32; margin-bottom: 10px; }
+    .card-ipa { font-size: 16px; color: #666; margin-bottom: 15px; }
     .quiz-word { font-size: 32px; font-weight: 900; color: #1565C0; margin: 10px 0; }
     
-    /* 按鈕微調 */
-    .stButton>button { border-radius: 8px; font-weight: bold; width: 100%; min-height: 45px; }
+    /* 按鈕微調 (強制讓4個按鈕塞進一排) */
+    .stButton>button { 
+        border-radius: 8px; 
+        font-weight: bold; 
+        width: 100%; 
+        min-height: 40px; 
+        padding-left: 2px !important; 
+        padding-right: 2px !important;
+        font-size: 14px !important;
+    }
     
-    /* 連結按鈕樣式 (模擬 Streamlit 按鈕) */
+    /* 連結按鈕樣式 (修復點擊無反應問題) */
     a.custom-link-btn {
-        display: inline-flex;
-        justify-content: center;
-        align-items: center;
+        display: block;
         width: 100%;
-        height: 45px;
-        background-color: #f0f2f6;
+        line-height: 40px; /* 垂直置中 */
+        text-align: center;
+        background-color: #ffffff;
         color: #31333F;
         text-decoration: none;
         border-radius: 8px;
         border: 1px solid #d6d6d8;
         font-weight: 600;
         font-size: 14px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: all 0.2s;
+        cursor: pointer;
+        z-index: 10; /* 確保浮在最上層 */
     }
     a.custom-link-btn:hover {
         border-color: #f63366;
         color: #f63366;
+        background-color: #f0f2f6;
+    }
+    a.custom-link-btn:active {
+        background-color: #f63366;
+        color: white;
     }
 
     .version-tag { text-align: center; color: #aaa; font-size: 10px; margin-top: 30px; }
@@ -164,7 +180,7 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
         b64 = base64.b64encode(fp.getvalue()).decode()
         rand_id = f"audio_{uuid.uuid4()}"
         
-        # 增強版 Autoplay 標籤
+        # 增強版 Autoplay 標籤 (針對手機優化)
         autoplay_attr = "autoplay" if autoplay else ""
         style = "width: 100%; height: 40px;" if visible else "width: 0; height: 0; display: none;"
         
@@ -173,12 +189,14 @@ def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visib
                 <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
             </audio>
             <script>
-                var audio = document.getElementById("{rand_id}");
-                if (audio) {{
-                    audio.play().catch(function(error) {{
-                        console.log("Autoplay blocked: " + error);
-                    }});
-                }}
+                setTimeout(function() {{
+                    var audio = document.getElementById("{rand_id}");
+                    if (audio) {{
+                        audio.play().catch(function(error) {{
+                            console.log("Auto-play prevented by browser policy (interact first): " + error);
+                        }});
+                    }}
+                }}, 100);
             </script>
         """
     except: return ""
@@ -257,17 +275,16 @@ def main_page():
     # 單筆輸入
     w_in = st.text_input("輸入英文單字", placeholder="例如: Polymer")
     
-    # --- 修正 3: 批量輸入 (自動翻譯版) ---
-    with st.expander("📂 批量輸入 (自動翻譯)"):
-        st.caption("請輸入英文單字，用逗號隔開。系統會自動翻譯。")
-        batch_text = st.text_area("輸入範例：Apple, Banana, Project, Manager", height=100)
+    # --- 批量輸入 (自動翻譯版) ---
+    with st.expander("📂 批量輸入 (輸入英文，逗號隔開)"):
+        st.caption("只需輸入英文單字，系統會自動翻譯。例如：apple, banana, dog")
+        batch_text = st.text_area("輸入框", height=100)
         
         if st.button("批量加入", use_container_width=True):
             if not target_nb: st.error("請選擇筆記本"); st.stop()
             if not batch_text: st.warning("請輸入內容"); st.stop()
             
-            # 分割並處理
-            # 支援逗號 (,) 和 換行 (\n) 分隔
+            # 分割並處理 (逗號或換行)
             raw_words = batch_text.replace('\n', ',').split(',')
             added_count = 0
             
@@ -279,11 +296,9 @@ def main_page():
                 w = w.strip()
                 if w and not check_duplicate(st.session_state.df, current_user, target_nb, w):
                     try:
-                        status_text.text(f"正在處理: {w} ...")
+                        status_text.text(f"正在翻譯並加入: {w} ...")
                         ipa = f"[{eng_to_ipa.convert(w)}]"
-                        # 自動翻譯
                         trans = GoogleTranslator(source='auto', target='zh-TW').translate(w)
-                        
                         new = {'User': current_user, 'Notebook': target_nb, 'Word': w, 'IPA': ipa, 'Chinese': trans, 'Date': pd.Timestamp.now().strftime('%Y-%m-%d')}
                         st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new])], ignore_index=True)
                         added_count += 1
@@ -329,12 +344,12 @@ def main_page():
 
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # --- Tab 1: 列表 (修正 1 & 2: 橫排 + 按鈕修復) ---
+    # --- Tab 1: 列表 (修正: 4個按鈕同一排) ---
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
-                # 每個單字一張卡片
                 with st.container():
+                    # 顯示單字
                     st.markdown(f"""
                     <div class="list-card">
                         <div class="word-row">
@@ -345,31 +360,30 @@ def main_page():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 操作按鈕列 (使用 Columns 達成橫排)
-                    # 比例分配: 發音(1) 刪除(1) G翻譯(1.5) Y字典(1.5)
-                    c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1.5])
+                    # 修正排版: 使用4個等寬欄位
+                    # 順序: 發音 | 刪除 | G翻譯 | Y字典
+                    c1, c2, c3, c4 = st.columns(4)
                     
                     with c1:
-                        # 發音鍵
                         if st.button("🔊", key=f"p_{i}"):
                             st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     
                     with c2:
-                        # 刪除鍵 (移到發音旁邊)
+                        # 刪除鍵移到這裡
                         if st.button("🗑️", key=f"d_{i}"):
                             st.session_state.df = st.session_state.df.drop(i)
                             save_to_google_sheet(st.session_state.df)
                             safe_rerun()
                     
                     with c3:
-                        # G 翻譯 (使用 Markdown 連結按鈕，確保有點擊反應)
-                        st.markdown(f'''<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G 翻譯</a>''', unsafe_allow_html=True)
+                        # G 翻譯 (使用 a 標籤按鈕修復)
+                        st.markdown(f'''<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G翻譯</a>''', unsafe_allow_html=True)
 
                     with c4:
-                        # Y 字典
-                        st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={row['Word']}" target="_blank" class="custom-link-btn">Y 字典</a>''', unsafe_allow_html=True)
+                        # Y 字典 (使用 a 標籤按鈕修復)
+                        st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={row['Word']}" target="_blank" class="custom-link-btn">Y字典</a>''', unsafe_allow_html=True)
                     
-                    st.markdown("---") # 分隔線
+                    st.markdown("---") 
         else: st.info("無資料")
 
     # --- Tab 2: 卡片 ---
@@ -395,7 +409,7 @@ def main_page():
             with cb3:
                 if st.button("▶", key="c_next"): st.session_state.card_idx += 1; safe_rerun()
 
-    # --- Tab 3: 輪播 (修正 4: 自動播放嘗試) ---
+    # --- Tab 3: 輪播 (修正: 移除手動按鈕，強制嘗試自動播放) ---
     with tabs[2]:
         if not st.session_state.is_sliding:
             if st.button("▶️ 開始輪播", type="primary", use_container_width=True):
@@ -418,13 +432,13 @@ def main_page():
                     
                     with ph.container():
                         st.markdown(f"""<div class="card-box"><div class="card-word" style="font-size:36px;">{txt}</div></div>""", unsafe_allow_html=True)
-                        # 自動播放 (這裡使用了 JS 增強版)
+                        # 自動播放
                         st.markdown(get_audio_html(txt, lang, st.session_state.accent_tld, st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     
                     time.sleep(2.5)
             st.session_state.is_sliding = False; safe_rerun()
 
-    # --- Tab 4: 測驗 (修復顯示) ---
+    # --- Tab 4: 測驗 ---
     with tabs[3]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
@@ -462,7 +476,7 @@ def main_page():
                 if st.button("➡️ 下一題", type="primary", use_container_width=True):
                     st.session_state.quiz_current = None; safe_rerun()
 
-    # --- Tab 5: 拼字 (修復顯示) ---
+    # --- Tab 5: 拼字 ---
     with tabs[4]:
         if filtered_df.empty: st.warning("沒單字")
         else:
