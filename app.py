@@ -6,6 +6,7 @@ from io import BytesIO
 import time
 import random
 import uuid
+import urllib.parse # 新增: 用於修復網址帶入單字
 
 # --- 安全引用第三方套件 ---
 try:
@@ -17,14 +18,14 @@ try:
     PACKAGES_OK = True
 except ImportError as e:
     st.error(f"❌ 缺少必要套件: {e}")
-    st.stop()
+    PACKAGES_OK = False
 
 # ==========================================
-# 0. 核心設定 (必須放最上面)
+# 0. 核心設定
 # ==========================================
 st.set_page_config(page_title="職場英文生存術", layout="wide", page_icon="🏭")
 
-VERSION = "v65.0 (V54 Layout + Restored Functions)"
+VERSION = "v66.0 (V54 Layout + G-Trans Fix)"
 
 def safe_rerun():
     if hasattr(st, "rerun"):
@@ -124,6 +125,7 @@ st.markdown("""
 # ==========================================
 @st.cache_data(ttl=60, show_spinner=False)
 def get_google_sheet_data():
+    if not PACKAGES_OK: return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
     try:
         if "service_account" not in st.secrets: return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
         creds_json = json.loads(st.secrets["service_account"]["info"])
@@ -142,6 +144,7 @@ def get_google_sheet_data():
     except: return pd.DataFrame(columns=['User', 'Notebook', 'Word', 'IPA', 'Chinese', 'Date'])
 
 def save_to_google_sheet(df):
+    if not PACKAGES_OK: return
     try:
         creds_json = json.loads(st.secrets["service_account"]["info"])
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
@@ -159,6 +162,7 @@ def save_to_google_sheet(df):
     except Exception as e: st.error(f"儲存失敗: {e}")
 
 def get_audio_html(text, lang='en', tld='com', slow=False, autoplay=False, visible=True):
+    if not PACKAGES_OK: return ""
     try:
         if not text: return ""
         tts = gTTS(text=str(text), lang=lang, tld=tld, slow=slow)
@@ -235,63 +239,6 @@ def initialize_session_state():
     for k in ['spell_current', 'spell_input', 'spell_checked', 'spell_correct', 'spell_score', 'spell_total']:
          if k not in st.session_state: st.session_state[k] = "" if 'input' in k else (None if 'current' in k else 0)
 
-# --- 設定頁面 (已恢復) ---
-def settings_page():
-    st.subheader("⚙️ 設定")
-    if st.button("🔙 返回主畫面", use_container_width=True):
-        st.session_state.current_page = "main"
-        safe_rerun()
-    st.divider()
-    
-    st.write("**發音設定:**")
-    acc = st.selectbox("口音", ["美式 (com)", "英式 (co.uk)"])
-    st.session_state.accent_tld = "co.uk" if "英式" in acc else "com"
-    
-    st.divider()
-    st.write("**輪播順序:**")
-    c1, c2, c3 = st.columns(3)
-    if c1.button("英文"): st.session_state.play_order.append("英文")
-    if c2.button("中文"): st.session_state.play_order.append("中文")
-    if c3.button("清空"): st.session_state.play_order = []
-    st.info(f"目前順序: {st.session_state.play_order}")
-    
-    st.divider()
-    if st.button("🚪 登出", type="secondary", use_container_width=True):
-        st.session_state.logged_in = False
-        st.session_state.current_page = "main"
-        safe_rerun()
-
-# --- 下載頁面 (已恢復) ---
-def download_page():
-    st.subheader("📥 下載中心")
-    if st.button("🔙 返回主畫面", use_container_width=True):
-        st.session_state.current_page = "main"
-        safe_rerun()
-    st.divider()
-    
-    df = st.session_state.df
-    user_df = df[df['User'] == st.session_state.current_user]
-    st.write(f"您的單字總數: {len(user_df)}")
-    
-    if not user_df.empty:
-        # Excel
-        st.download_button("📥 下載 Excel", data=to_excel(user_df), file_name="vocab.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        
-        # MP3
-        st.markdown("---")
-        st.write("🎵 **MP3 語音檔** (最多前50字)")
-        if st.button("開始製作 MP3", use_container_width=True):
-            with st.spinner("錄音中...請稍候"):
-                mp3_data = generate_custom_audio(user_df, st.session_state.play_order, st.session_state.accent_tld, st.session_state.is_slow)
-                st.session_state.mp3_cache = mp3_data
-                safe_rerun()
-        
-        if 'mp3_cache' in st.session_state:
-             st.download_button("⬇️ 下載製作好的 MP3", st.session_state.mp3_cache, file_name="vocab_audio.mp3", mime="audio/mp3", use_container_width=True)
-    else:
-        st.warning("無資料可下載")
-
-# --- 主功能頁面 ---
 def main_page():
     df_all = st.session_state.df
     current_user = st.session_state.current_user
@@ -394,7 +341,7 @@ def main_page():
 
     tabs = st.tabs(["列表", "卡片", "輪播", "測驗", "拼字"])
     
-    # --- Tab 1: 列表 ---
+    # --- Tab 1: 列表 (修正 1 & 2: 橫排 + 按鈕修復) ---
     with tabs[0]:
         if not filtered_df.empty:
             for i, row in filtered_df.iloc[::-1].iterrows():
@@ -410,7 +357,8 @@ def main_page():
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # 操作按鈕列
+                    # 操作按鈕列 (使用 Columns 達成橫排)
+                    # 比例分配: 發音(1) 刪除(1) G翻譯(1.5) Y字典(1.5)
                     c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1.5])
                     
                     with c1:
@@ -419,19 +367,21 @@ def main_page():
                             st.markdown(get_audio_html(row['Word'], tld=st.session_state.accent_tld, slow=st.session_state.is_slow, autoplay=True, visible=False), unsafe_allow_html=True)
                     
                     with c2:
-                        # 刪除鍵
+                        # 刪除鍵 (移到發音旁邊)
                         if st.button("🗑️", key=f"d_{i}"):
                             st.session_state.df = st.session_state.df.drop(i)
                             save_to_google_sheet(st.session_state.df)
                             safe_rerun()
                     
                     with c3:
-                        # G 翻譯
-                        st.markdown(f'''<a href="https://translate.google.com/?sl=en&tl=zh-TW&text={row['Word']}&op=translate" target="_blank" class="custom-link-btn">G 翻譯</a>''', unsafe_allow_html=True)
+                        # G 翻譯 (修復: 使用 urllib.parse.quote 編碼單字)
+                        word_encoded = urllib.parse.quote(row['Word'])
+                        st.markdown(f'''<a href="https://translate.google.com/?sl=auto&tl=zh-TW&text={word_encoded}&op=translate" target="_blank" class="custom-link-btn">G 翻譯</a>''', unsafe_allow_html=True)
 
                     with c4:
                         # Y 字典
-                        st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={row['Word']}" target="_blank" class="custom-link-btn">Y 字典</a>''', unsafe_allow_html=True)
+                        word_encoded = urllib.parse.quote(row['Word'])
+                        st.markdown(f'''<a href="https://tw.dictionary.search.yahoo.com/search?p={word_encoded}" target="_blank" class="custom-link-btn">Y 字典</a>''', unsafe_allow_html=True)
                     
                     st.markdown("---") # 分隔線
         else: st.info("無資料")
@@ -459,7 +409,7 @@ def main_page():
             with cb3:
                 if st.button("▶", key="c_next"): st.session_state.card_idx += 1; safe_rerun()
 
-    # --- Tab 3: 輪播 ---
+    # --- Tab 3: 輪播 (修正 4: 自動播放嘗試) ---
     with tabs[2]:
         if not st.session_state.is_sliding:
             if st.button("▶️ 開始輪播", type="primary", use_container_width=True):
@@ -488,7 +438,7 @@ def main_page():
                     time.sleep(2.5)
             st.session_state.is_sliding = False; safe_rerun()
 
-    # --- Tab 4: 測驗 ---
+    # --- Tab 4: 測驗 (修復顯示) ---
     with tabs[3]:
         if filtered_df.empty: st.warning("沒單字無法測驗")
         else:
@@ -526,7 +476,7 @@ def main_page():
                 if st.button("➡️ 下一題", type="primary", use_container_width=True):
                     st.session_state.quiz_current = None; safe_rerun()
 
-    # --- Tab 5: 拼字 ---
+    # --- Tab 5: 拼字 (修復顯示) ---
     with tabs[4]:
         if filtered_df.empty: st.warning("沒單字")
         else:
@@ -567,8 +517,38 @@ def login_page():
 def main():
     initialize_session_state()
     if not st.session_state.logged_in: login_page()
-    elif st.session_state.current_page == "settings": settings_page()
-    elif st.session_state.current_page == "download": download_page()
+    elif st.session_state.current_page == "settings": 
+        st.button("🔙 返回", on_click=lambda: setattr(st.session_state, 'current_page', 'main')); st.title("設定")
+        # --- 設定頁面內容 ---
+        st.write("發音設定:")
+        acc = st.selectbox("口音", ["美式 (com)", "英式 (co.uk)"])
+        st.session_state.accent_tld = "co.uk" if "英式" in acc else "com"
+        st.divider()
+        st.write("輪播順序:")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("英文"): st.session_state.play_order.append("英文")
+        if c2.button("中文"): st.session_state.play_order.append("中文")
+        if c3.button("清空"): st.session_state.play_order = []
+        st.info(f"目前順序: {st.session_state.play_order}")
+        st.divider()
+        if st.button("登出", type="secondary"): st.session_state.logged_in = False; safe_rerun()
+
+    elif st.session_state.current_page == "download":
+        st.button("🔙 返回", on_click=lambda: setattr(st.session_state, 'current_page', 'main')); st.title("下載")
+        # --- 下載頁面內容 ---
+        df = st.session_state.df
+        user_df = df[df['User'] == st.session_state.current_user]
+        if not user_df.empty:
+            st.download_button("📥 下載 Excel", data=to_excel(user_df), file_name="vocab.xlsx")
+            st.divider()
+            if st.button("🎵 製作 MP3"):
+                mp3 = generate_custom_audio(user_df, st.session_state.play_order, st.session_state.accent_tld, st.session_state.is_slow)
+                st.session_state.mp3_cache = mp3
+                safe_rerun()
+            if st.session_state.get('mp3_cache'):
+                st.download_button("⬇️ 下載 MP3", st.session_state.mp3_cache, file_name="vocab.mp3")
+        else: st.warning("無資料")
+
     else: main_page()
 
 if __name__ == "__main__":
